@@ -1,10 +1,10 @@
+import { html, render } from '../vendor/preact-htm.js';
 import * as S from './store.js';
-import { render, bind } from './ui.js';
+import { App } from './ui/app.js';
 
-bind();
-S.subscribe(render);
-render();
+render(html`<${App} />`, document.getElementById('root'));
+S.startSyncLoop(); // sin sesión no hace nada; al iniciar sesión ya está activo
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+  addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 }

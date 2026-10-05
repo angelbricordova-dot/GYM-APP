@@ -54,7 +54,7 @@ const inRound = (x, y, [x0, y0, x1, y1, r]) => {
   return (x - cx) ** 2 + (y - cy) ** 2 <= r * r && x >= x0 && x <= x1 && y >= y0 && y <= y1;
 };
 const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
-const A = [124, 92, 255], B = [255, 92, 138];
+const A = [255, 138, 76], B = [255, 61, 110];
 
 function icon(size) {
   const SS = 3; // supersampling para bordes suaves

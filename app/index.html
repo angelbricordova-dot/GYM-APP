@@ -2,14 +2,15 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Gym Duo</title>
-  <meta name="description" content="Progreso en el gym, agua y premios para dos.">
-  <meta name="theme-color" content="#0b0d14">
+  <meta name="description" content="Entrenen, tomen agua y sigan su racha juntos.">
+  <meta name="theme-color" content="#07080c">
+  <meta name="color-scheme" content="dark">
 
   <!-- Instalable como app (Android/Chrome) -->
   <link rel="manifest" href="/manifest.webmanifest">
-  <!-- Instalable como app (iPhone: Compartir → Agregar a inicio) -->
+  <!-- Instalable como app (iPhone: Compartir → Agregar a pantalla de inicio) -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Gym Duo">
@@ -20,10 +21,7 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <div id="app"></div>
-  <nav id="tabbar" class="tabbar" hidden></nav>
-  <div id="sheet"></div>
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="root"></div>
   <noscript>Esta app necesita JavaScript.</noscript>
   <script type="module" src="/js/main.js"></script>
 </body>

@@ -1,0 +1,287 @@
+// Lógica pura (sin DOM): fechas, rachas, tokens, sobrecarga progresiva y estadísticas.
+// Todo se calcula a partir del documento de cada persona, así borrar/editar algo nunca deja tokens huérfanos.
+
+// ---------- fechas ----------
+const pad = (n) => String(n).padStart(2, '0');
+export const ymd = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+export const hm = (d = new Date()) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+export const parseYmd = (s) => {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+export const addDays = (s, n) => {
+  const d = parseYmd(s);
+  d.setDate(d.getDate() + n);
+  return ymd(d);
+};
+export const diffDays = (a, b) => Math.round((Date.UTC(...ymdParts(b)) - Date.UTC(...ymdParts(a))) / 864e5);
+const ymdParts = (s) => { const [y, m, d] = s.split('-').map(Number); return [y, m - 1, d]; };
+export const mondayOf = (s) => addDays(s, -((parseYmd(s).getDay() + 6) % 7));
+export const weekdayIdx = (s) => (parseYmd(s).getDay() + 6) % 7; // Lun=0 … Dom=6
+export const DAY_NAMES = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+export const DAY_INITIALS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+export const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+export const keyOf = (name) => name.trim().toLowerCase();
+export const num = (v) => {
+  const n = parseFloat(String(v).replace(',', '.'));
+  return Number.isFinite(n) ? n : 0;
+};
+
+// ---------- constantes de juego ----------
+export const EARN = { checkin: 10, water: 5, pr: 5, week: 20 };
+export const MILESTONES = { 3: 10, 7: 25, 14: 40, 30: 100, 60: 150, 100: 250 };
+export const ACCENTS = ['#8b7cff', '#ff5c93', '#38bdf8', '#2dd4a7', '#ff8a4c', '#b6f23a'];
+
+export function newDoc(id, name, color = ACCENTS[0]) {
+  return {
+    v: 2, id, name, color, avatar: null, heightCm: null, weeklyGoal: 3, waterGoalMl: 2000, restDays: 2, shareWeight: false,
+    weights: [], sessions: [], water: {}, checkins: {}, pauses: [], ledger: [], routines: [],
+    createdAt: Date.now(), updatedAt: Date.now(),
+  };
+}
+
+// ---------- rachas ----------
+export const gymDays = (doc) => Object.keys(doc.checkins).sort();
+
+/** Días pausados (enfermedad, viaje) en el intervalo (a, b]. No cuentan como descanso "perdido". */
+export function pausedBetween(doc, a, b) {
+  let n = 0;
+  for (const p of doc.pauses || []) {
+    const from = p.from > a ? p.from : addDays(a, 1);
+    const to = !p.to || p.to > b ? b : p.to;
+    if (to >= from) n += diffDays(from, to) + 1;
+  }
+  return n;
+}
+
+/**
+ * Racha tolerante a descansos: un día de gym se encadena con el anterior si entre ambos hay como máximo
+ * `restDays` días sin ir (sin contar días en pausa). La racha cuenta días de gym, no días de calendario.
+ * Una racha rota por falta de descanso no borra tu "mejor racha".
+ */
+export function streakInfo(doc, today = ymd()) {
+  const days = gymDays(doc);
+  const allow = (doc.restDays ?? 2) + 1;
+  const gap = (a, b) => diffDays(a, b) - pausedBetween(doc, a, b);
+  const chains = [];
+  let cur = [];
+  for (const d of days) {
+    if (cur.length && gap(cur.at(-1), d) > allow) { chains.push(cur); cur = []; }
+    cur.push(d);
+  }
+  if (cur.length) chains.push(cur);
+
+  const last = days.at(-1) || null;
+  const since = last ? gap(last, today) : null;
+  const alive = last !== null && since <= allow;
+  const chain = alive ? chains.at(-1) : [];
+  return {
+    current: chain.length,
+    longest: Math.max(0, ...chains.map((c) => c.length)),
+    chain,
+    chains,
+    last,
+    total: days.length,
+    doneToday: last === today,
+    alive,
+    atRisk: alive && last !== today && since === allow, // hoy es el último día para mantenerla
+    daysLeft: alive ? allow - since : 0,
+    paused: isPaused(doc, today),
+  };
+}
+
+export const isPaused = (doc, date = ymd()) => (doc.pauses || []).some((p) => p.from <= date && (!p.to || p.to >= date));
+
+export function weekCounts(doc) {
+  const sets = {};
+  for (const d of gymDays(doc)) (sets[mondayOf(d)] ||= new Set()).add(d);
+  return Object.fromEntries(Object.entries(sets).map(([w, s]) => [w, s.size]));
+}
+
+/** Semanas seguidas cumpliendo la meta semanal (la semana en curso suma pero no rompe). */
+export function weekStreak(doc, today = ymd()) {
+  const counts = weekCounts(doc);
+  let w = mondayOf(today);
+  let n = (counts[w] || 0) >= doc.weeklyGoal ? 1 : 0;
+  w = addDays(w, -7);
+  while ((counts[w] || 0) >= doc.weeklyGoal) { n++; w = addDays(w, -7); }
+  return n;
+}
+
+/** Racha de pareja: semanas seguidas en las que AMBOS cumplieron su meta. */
+export function pairWeekStreak(a, b, today = ymd()) {
+  if (!a || !b) return 0;
+  const ca = weekCounts(a), cb = weekCounts(b);
+  const both = (w) => (ca[w] || 0) >= a.weeklyGoal && (cb[w] || 0) >= b.weeklyGoal;
+  let w = mondayOf(today);
+  let n = both(w) ? 1 : 0;
+  w = addDays(w, -7);
+  while (both(w)) { n++; w = addDays(w, -7); }
+  return n;
+}
+
+export function weekDots(doc, today = ymd()) {
+  const start = mondayOf(today);
+  return DAY_NAMES.map((label, i) => {
+    const date = addDays(start, i);
+    return { label: DAY_INITIALS[i], date, done: !!doc.checkins[date], today: date === today, future: date > today };
+  });
+}
+
+/** Cuadrícula de un mes (lunes primero) con seis filas como máximo. */
+export function monthGrid(year, month) {
+  const first = ymd(new Date(year, month, 1));
+  let d = mondayOf(first);
+  const weeks = [];
+  do {
+    weeks.push(Array.from({ length: 7 }, (_, i) => {
+      const date = addDays(d, i);
+      return { date, inMonth: parseYmd(date).getMonth() === month };
+    }));
+    d = addDays(d, 7);
+  } while (parseYmd(d).getMonth() === month);
+  return weeks;
+}
+
+export function habits(doc) {
+  const perDay = new Array(7).fill(0);
+  const mins = [];
+  for (const [date, c] of Object.entries(doc.checkins)) {
+    perDay[weekdayIdx(date)]++;
+    const [h, m] = (c.time || '').split(':').map(Number);
+    if (Number.isFinite(h)) mins.push(h * 60 + (m || 0));
+  }
+  const max = Math.max(...perDay);
+  const avg = mins.length ? Math.round(mins.reduce((a, b) => a + b, 0) / mins.length) : null;
+  return {
+    total: Object.keys(doc.checkins).length,
+    perDay,
+    topDays: max ? perDay.flatMap((c, i) => (c === max ? [DAY_NAMES[i]] : [])) : [],
+    avgTime: avg == null ? null : `${pad(Math.floor(avg / 60))}:${pad(avg % 60)}`,
+  };
+}
+
+export const monthCount = (doc, prefix = ymd().slice(0, 7)) => Object.keys(doc.checkins).filter((d) => d.startsWith(prefix)).length;
+
+// ---------- entrenos ----------
+export const e1rm = (s) => (s.kg > 0 ? s.kg * (1 + s.reps / 30) : 0);
+const sorted = (doc) => [...doc.sessions].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+
+export function exerciseCatalog(doc) {
+  const map = new Map();
+  for (const s of sorted(doc)) {
+    for (const ex of s.exercises) {
+      const k = keyOf(ex.name);
+      const cur = map.get(k) || { key: k, name: ex.name, count: 0, last: '' };
+      cur.count++;
+      cur.last = s.date;
+      map.set(k, cur);
+    }
+  }
+  return [...map.values()].sort((a, b) => b.last.localeCompare(a.last) || b.count - a.count);
+}
+
+export function lastPerformance(doc, key) {
+  for (const s of sorted(doc).reverse()) {
+    const ex = s.exercises.find((e) => keyOf(e.name) === key);
+    if (ex) return { date: s.date, sets: ex.sets };
+  }
+  return null;
+}
+
+/**
+ * Doble progresión: si todas las series con tu peso más alto llegaron al tope de reps, sube el peso
+ * y vuelve al mínimo; si no, mismo peso y una repetición más que tu peor serie.
+ */
+export function suggestNext(doc, name, { repMin = 8, repMax = 12, inc = 2.5 } = {}) {
+  const last = lastPerformance(doc, keyOf(name));
+  if (!last || !last.sets.length) return null;
+  const top = Math.max(...last.sets.map((s) => s.kg));
+  const atTop = last.sets.filter((s) => s.kg === top);
+  const minReps = Math.min(...atTop.map((s) => s.reps));
+  const base = { sets: last.sets.length, last };
+  if (top === 0) return { ...base, kg: 0, reps: minReps + 1, up: false };
+  if (atTop.every((s) => s.reps >= repMax)) return { ...base, kg: top + inc, reps: repMin, up: true };
+  return { ...base, kg: top, reps: Math.min(repMax, minReps + 1), up: false };
+}
+
+export function exerciseSeries(doc, key) {
+  const out = [];
+  for (const s of sorted(doc)) {
+    const ex = s.exercises.find((e) => keyOf(e.name) === key);
+    if (!ex) continue;
+    out.push({ date: s.date, top: Math.max(...ex.sets.map((x) => x.kg)), e1rm: Math.max(...ex.sets.map(e1rm)), reps: Math.max(...ex.sets.map((x) => x.reps)) });
+  }
+  return out;
+}
+
+export const sessionVolume = (s) => s.exercises.reduce((a, ex) => a + ex.sets.reduce((b, x) => b + x.kg * x.reps, 0), 0);
+export const sessionSets = (s) => s.exercises.reduce((a, ex) => a + ex.sets.length, 0);
+
+/** Récords que traería una sesión nueva frente al historial existente. */
+export function findPRs(doc, session) {
+  const prs = [];
+  const before = { ...doc, sessions: doc.sessions.filter((s) => s.id !== session.id) };
+  for (const ex of session.exercises) {
+    const k = keyOf(ex.name);
+    const prev = Math.max(0, ...exerciseSeries(before, k).map((x) => x.e1rm));
+    const now = Math.max(...ex.sets.map(e1rm));
+    if (prev > 0 && now > prev) prs.push(ex.name);
+  }
+  return prs;
+}
+
+// ---------- tokens ----------
+/**
+ * Los tokens "automáticos" se derivan de los datos y se reconcilian aquí: borrar un entreno o bajar el agua
+ * revierte su premio y nunca se cobra dos veces. Los canjes (entradas con `ref`) son manuales y no se tocan.
+ */
+export function recomputeAwards(doc) {
+  const want = new Map();
+  const put = (key, delta, reason, date) => want.set(key, { key, delta, reason, date });
+
+  const info = streakInfo(doc);
+  for (const d of gymDays(doc)) put(`gym:${d}`, EARN.checkin, 'Fuiste al gimnasio', d);
+  for (const chain of info.chains) {
+    for (const [n, bonus] of Object.entries(MILESTONES)) {
+      if (chain.length >= Number(n)) put(`streak:${chain[0]}:${n}`, bonus, `Racha de ${n} días 🔥`, chain[Number(n) - 1]);
+    }
+  }
+
+  const best = new Map();
+  for (const s of sorted(doc)) {
+    for (const ex of s.exercises) {
+      const k = keyOf(ex.name);
+      const top = Math.max(...ex.sets.map(e1rm));
+      if (best.has(k) && top > best.get(k)) put(`pr:${k}:${s.id}`, EARN.pr, `Récord en ${ex.name}`, s.date);
+      best.set(k, Math.max(best.get(k) || 0, top));
+    }
+  }
+
+  for (const [week, count] of Object.entries(weekCounts(doc))) {
+    if (count >= doc.weeklyGoal) put(`week:${week}`, EARN.week, `Meta semanal (${count}/${doc.weeklyGoal})`, addDays(week, 6));
+  }
+  for (const [d, ml] of Object.entries(doc.water)) {
+    if (ml >= doc.waterGoalMl) put(`water:${d}`, EARN.water, `Meta de agua (${doc.waterGoalMl / 1000} L)`, d);
+  }
+
+  const kept = doc.ledger.filter((e) => !e.key || want.has(e.key));
+  const have = new Set(kept.map((e) => e.key).filter(Boolean));
+  for (const w of want.values()) if (!have.has(w.key)) kept.push({ id: uid(), ts: Date.now(), ...w });
+  doc.ledger = kept;
+  return doc;
+}
+
+export const balance = (doc) => doc.ledger.reduce((a, e) => a + e.delta, 0);
+export const ledgerSorted = (doc) => [...doc.ledger].sort((a, b) => b.date.localeCompare(a.date) || b.ts - a.ts);
+
+// ---------- ejercicios comunes (para agregar rápido) ----------
+export const LIBRARY = [
+  ['Pecho', ['Press banca', 'Press inclinado con mancuernas', 'Aperturas', 'Fondos', 'Press en máquina', 'Cruces en polea']],
+  ['Espalda', ['Dominadas', 'Jalón al pecho', 'Remo con barra', 'Remo con mancuerna', 'Remo en polea', 'Peso muerto']],
+  ['Pierna', ['Sentadilla', 'Prensa', 'Peso muerto rumano', 'Zancadas', 'Hip thrust', 'Extensión de cuádriceps', 'Curl femoral', 'Elevación de talones', 'Abducción en máquina']],
+  ['Hombro', ['Press militar', 'Elevaciones laterales', 'Pájaros', 'Face pull', 'Press Arnold']],
+  ['Brazo', ['Curl con barra', 'Curl martillo', 'Press francés', 'Extensión en polea', 'Fondos en banco']],
+  ['Core', ['Plancha', 'Crunch', 'Elevación de piernas', 'Rueda abdominal']],
+  ['Cardio', ['Caminadora', 'Elíptica', 'Bicicleta', 'Escaladora']],
+];
