@@ -165,19 +165,27 @@ export function startSyncLoop() {
 // Tras “reiniciar de cero” solo cuentan los retos aprobados DESPUÉS del reinicio.
 const approvedForMe = () => state.challenges.filter((c) => c.status === 'approved' && c.to === state.me?.id && (c.approvedAt || 0) > (state.me?.resetAt || 0));
 
+/** Puntos que mi pareja decidió quitarme por cada “hoy no fui” (por fecha). */
+export const skipPenalties = () => Object.fromEntries(state.messages.filter((m) => m.kind === 'skip' && m.from === state.auth?.uid && m.penalty && m.ref?.date).map((m) => [m.ref.date, m.penalty.points]));
+const awardsExtra = () => ({ challenges: approvedForMe(), skipPenalties: skipPenalties() });
+
+/** Avisos de “hoy no fui” de mi pareja que aún no he decidido cuántos puntos quitar. */
+export const skipsToDecide = () => state.messages.filter((m) => m.kind === 'skip' && m.from !== state.auth?.uid && !m.penalty && m.ref?.date && !state.partner?.doc?.checkins?.[m.ref.date]);
+export const decidePenalty = (id, points) => act('POST', `/messages/${id}/penalty`, { points });
+
 /** Los retos aprobados por mi pareja se convierten en puntos de amor en MI documento (cada quien escribe solo el suyo). */
 function reconcilePoints() {
   if (!state.me) return;
   const sig = () => state.me.ledger.map((e) => e.id).join();
   const before = sig();
-  L.recomputeAwards(state.me, { challenges: approvedForMe() });
+  L.recomputeAwards(state.me, awardsExtra());
   if (sig() !== before) { state.me.updatedAt = Math.max(Date.now(), state.me.updatedAt + 1); state.dirty = true; }
 }
 
 export function update(fn) {
   if (!state.me) return;
   fn(state.me);
-  L.recomputeAwards(state.me, { challenges: approvedForMe() });
+  L.recomputeAwards(state.me, awardsExtra());
   state.me.updatedAt = Math.max(Date.now(), state.me.updatedAt + 1);
   state.dirty = true;
   commit();
@@ -212,14 +220,14 @@ export const addSupp = ({ name, emoji, when }) => update((me) => {
 export const removeSupp = (id) => update((me) => { me.supps = L.suppList(me).filter((x) => x.id !== id); });
 
 // ---------- “hoy no voy” ----------
-/** Cuenta la razón, se la manda a tu pareja y resta puntos de amor (se revierte si al final sí entrenas ese día). */
+/** Cuenta la razón y se la manda a tu pareja, que decide cuántos puntos de amor te quita (no cuenta si al final sí entrenas ese día). */
 export async function skipToday(reason) {
   const text = String(reason || '').trim().slice(0, 140);
   const date = L.ymd();
   if (!text) return { ok: false, data: { error: 'Escribe la razón.' } };
   if (state.me.checkins[date] || state.me.skips?.[date]) return { ok: false, data: { error: 'Hoy ya está registrado.' } };
   update((me) => { me.skips = me.skips || {}; me.skips[date] = { reason: text, ts: Date.now() }; });
-  const res = await call('POST', '/messages', { text, kind: 'skip' });
+  const res = await call('POST', '/messages', { text, kind: 'skip', ref: { uid: state.auth.uid, date } });
   if (res.ok) await syncNow();
   return { ok: true, sent: res.ok, data: res.data };
 }

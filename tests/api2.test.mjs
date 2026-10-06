@@ -110,8 +110,18 @@ test('tablero de motivación: corazones y borrado solo del autor', async () => {
 });
 
 test('“hoy no voy”: la nota llega a la pareja como tipo skip y el documento con skips y suplementos se guarda', async () => {
-  const r = await call('POST', '/messages', { token: A.token, body: { text: 'No fui porque me dio flojera', kind: 'skip' } });
+  assert.equal((await call('POST', '/messages', { token: A.token, body: { text: 'sin fecha', kind: 'skip' } })).status, 400);
+  const r = await call('POST', '/messages', { token: A.token, body: { text: 'No fui porque me dio flojera', kind: 'skip', ref: { uid: 'otro', date: '2026-10-06' } } });
   assert.equal(r.data.message.kind, 'skip');
+  assert.equal(r.data.message.ref.uid, A.uid); // la fecha es suya, el uid no se falsifica
+  const id = r.data.message.id;
+  assert.equal((await call('POST', `/messages/${id}/penalty`, { token: A.token, body: { points: 10 } })).status, 403); // lo decide la pareja
+  assert.equal((await call('POST', `/messages/${id}/penalty`, { token: B.token, body: { points: 0 } })).status, 400);
+  assert.equal((await call('POST', `/messages/${id}/penalty`, { token: B.token, body: { points: 101 } })).status, 400);
+  const dec = await call('POST', `/messages/${id}/penalty`, { token: B.token, body: { points: 15 } });
+  assert.equal(dec.data.message.penalty.points, 15);
+  assert.equal((await call('POST', `/messages/${id}/penalty`, { token: B.token, body: { points: 20 } })).status, 409); // una sola vez
+  assert.equal((await call('GET', '/sync', { token: A.token })).data.messages.find((x) => x.id === id).penalty.points, 15);
   const seen = (await call('GET', '/sync', { token: B.token })).data.messages.find((x) => x.id === r.data.message.id);
   assert.equal(seen.kind, 'skip');
   const me = (await call('GET', '/sync', { token: A.token })).data.me;

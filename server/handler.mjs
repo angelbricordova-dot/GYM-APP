@@ -353,13 +353,18 @@ async function postMessage(user, body) {
   const kind = ['cheer', 'text', 'reaction', 'skip'].includes(body.kind) ? body.kind : 'text';
   if (!text) return fail(400, 'Escribe algo.');
   const id = randomUUID();
-  const ref = body.ref && typeof body.ref === 'object' ? { uid: clean(body.ref.uid, 60), date: clean(body.ref.date, 10) } : null;
+  let ref = body.ref && typeof body.ref === 'object' ? { uid: clean(body.ref.uid, 60), date: clean(body.ref.date, 10) } : null;
+  if (kind === 'skip') { // “hoy no fui”: la fecha es la del día de quien lo cuenta; su pareja decidirá la penalización
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ref?.date || '')) return fail(400, 'Falta la fecha.');
+    ref = { uid: user.id, date: ref.date };
+  }
   const m = { id, from: user.id, text, kind, ref, likes: [], ts: Date.now() };
+  if (kind === 'skip') m.penalty = null;
   await db.set(`message/${String(m.ts).padStart(13, '0')}-${id}`, m);
   await tell(user, kind === 'reaction'
     ? { type: 'notes', title: `${first(user.name)} reaccionó ${text} a tu entreno`, url: '/?tab=together' }
     : kind === 'skip'
-      ? { type: 'notes', title: `😔 ${first(user.name)} hoy no va al gym`, body: text, url: '/?tab=together' }
+      ? { type: 'notes', title: `😔 ${first(user.name)} hoy no fue al gym`, body: `${text} · Decide cuántos puntos de amor le quitas`, url: '/?tab=together' }
       : { type: 'notes', title: `💌 Nota de ${first(user.name)}`, body: text, url: '/?tab=together' });
   return json(200, { message: m });
 }
@@ -374,6 +379,21 @@ async function likeMessage(user, id) {
   m.likes = m.likes.includes(user.id) ? m.likes.filter((x) => x !== user.id) : [...m.likes, user.id];
   await db.set(key, m);
   if (m.likes.includes(user.id) && m.from !== user.id) await push.notify(m.from, { type: 'notes', title: `${first(user.name)} le dio ❤️ a tu nota`, body: m.text, url: '/?tab=together' });
+  return json(200, { message: m });
+}
+
+/** Quien NO escribió el “hoy no fui” decide, una sola vez, cuántos puntos de amor quita (1 a 100). */
+async function penalizeMessage(user, id, body) {
+  const key = await findKey('message/', id);
+  const m = key && (await db.get(key));
+  if (!m || m.kind !== 'skip') return fail(404, 'No existe ese aviso.');
+  if (m.from === user.id) return fail(403, 'Eso lo decide tu pareja.');
+  if (m.penalty) return fail(409, 'Ya decidiste cuántos puntos quitar.');
+  const points = Math.round(Number(body.points));
+  if (!(points >= L.PENALTY.min && points <= L.PENALTY.max)) return fail(400, `Elige de ${L.PENALTY.min} a ${L.PENALTY.max} puntos.`);
+  m.penalty = { points, by: user.id, ts: Date.now() };
+  await db.set(key, m);
+  await push.notify(m.from, { type: 'notes', title: `${first(user.name)} te quitó ${points} puntos de amor`, body: m.text, url: '/?tab=together' });
   return json(200, { message: m });
 }
 
@@ -587,6 +607,7 @@ export default async function handler(req) {
     if (m === 'POST' && (r = path.match(/^\/challenges\/([^/]+)\/(start|evidence|review|cancel)$/))) return await challengeAction(user, r[1], r[2], req, url, r[2] === 'review' ? await body() : {});
     if (m === 'GET' && (r = path.match(/^\/challenges\/([^/]+)\/evidence$/))) return await getEvidence(r[1]);
     if (m === 'POST' && (r = path.match(/^\/messages\/([^/]+)\/like$/))) return await likeMessage(user, r[1]);
+    if (m === 'POST' && (r = path.match(/^\/messages\/([^/]+)\/penalty$/))) return await penalizeMessage(user, r[1], await body());
     if (m === 'POST' && (r = path.match(/^\/messages\/([^/]+)\/delete$/))) return await deleteMessage(user, r[1]);
     return fail(404, 'Ruta no encontrada.');
   } catch (e) {

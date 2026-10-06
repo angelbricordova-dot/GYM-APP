@@ -115,7 +115,9 @@ export function Auth() {
       ${!info?.full && html`<div class="row static"><span class="lead tint-rose">💌</span><div class="grow"><b>Si te invitaron</b><small class="muted">Usa el enlace o el código de invitación.</small></div></div>`}
       <div class="row static"><span class="lead tint-rose">🌱</span><div class="grow"><b>Si quieres empezar de nuevo</b><small class="muted">Entra y usa Perfil → Eliminar mi usuario. Cuando no quede nadie, el espacio queda libre para crearse otra vez.</small></div></div>
     </div>
-    <button class="btn primary block lg" onClick=${() => { setError(''); setMode('login'); }}>Entrar</button>
+    ${info?.googleClientId && html`<${GoogleButton} clientId=${info.googleClientId} onCredential=${withGoogle} text="signin_with" key="exists" />`}
+    ${error && html`<p class="notice" role="alert">${error}</p>`}
+    <button class="btn primary block lg" onClick=${() => { setError(''); setMode('login'); }}>Entrar con nombre y PIN</button>
     ${!info?.full && html`<button class="btn tinted block lg" onClick=${() => { setError(''); setMode('join'); }}>Unirme con código</button>`}
   <//>`;
 

@@ -6,7 +6,7 @@ import { openScreen, goTab } from './nav.js';
 import { beginWorkout } from './workout.js';
 import { ChallengeCard, NewChallengeSheet } from './challenges.js';
 import { shareInvite, copyInvite } from '../invite.js';
-import { SkipSheet } from './skip.js';
+import { SkipSheet, SkipDecision } from './skip.js';
 
 export function Today() {
   const [skip, setSkip] = useState(false);
@@ -20,6 +20,7 @@ export function Today() {
   return html`<div class="view-in">
     <${Header} me=${me} />
     <${Banners} />
+    ${S.skipsToDecide().map((m) => html`<${SkipDecision} key=${m.id} m=${m} />`)}
     <${WorkoutHero} me=${me} />
 
     ${(forMe.length > 0 || review.length > 0) && html`<section class="rise" style="--i:1">
@@ -41,8 +42,8 @@ export function Today() {
         ? html`<button class="btn tinted block" onClick=${() => S.endPause()}>Terminar pausa de racha</button>`
         : !me.checkins[L.ymd()] && html`<button class="btn tinted block" onClick=${() => openScreen('checkin')}><${Icon} name="camera" size=${18} /> Ya entrené: tomar mi foto</button>`}
       ${me.checkins[L.ymd()] && html`<p class="muted small center done-line">✅ Hoy ya cuenta · ${me.checkins[L.ymd()].time} h${me.checkins[L.ymd()].photo ? '' : ' · sin foto'}</p>`}
-      ${L.skipToday(me) && !me.checkins[L.ymd()] && html`<p class="skip-line">😔 Hoy no vas: “${L.skipToday(me).reason}” · −${L.EARN.skip} puntos. Si entrenas, se devuelven.</p>`}
-      ${!me.checkins[L.ymd()] && !L.skipToday(me) && !info.paused && html`<div class="center"><button class="link muted" onClick=${() => setSkip(true)}>Hoy no voy…</button></div>`}
+      ${L.skipToday(me) && !me.checkins[L.ymd()] && html`<${SkipStatus} skip=${L.skipToday(me)} />`}
+      ${!me.checkins[L.ymd()] && !L.skipToday(me) && !info.paused && S.state.partner && html`<button class="btn bad block" onClick=${() => setSkip(true)}><${Icon} name="x" size=${18} sw=${2.8} /> Hoy no fui al gym</button>`}
     </section>
 
     <${PartnerCard} partner=${partner} />
@@ -57,6 +58,12 @@ export function Today() {
     <${Goals} me=${me} />
     ${skip && html`<${SkipSheet} onClose=${() => setSkip(false)} />`}
   </div>`;
+}
+
+function SkipStatus({ skip }) {
+  const pts = S.skipPenalties()[L.ymd()];
+  const name = S.state.partner?.name || 'Tu pareja';
+  return html`<div class="skip-status"><b>😔 Hoy no fui</b><small>“${skip.reason}”</small><span>${pts ? `${name} te quitó ${pts} puntos de amor. Entrenar hoy los devuelve.` : `Esperando a que ${name} decida cuántos puntos te quita.`}</span></div>`;
 }
 
 function Header({ me }) {
@@ -118,7 +125,7 @@ function Banners() {
   const [hideIos, setHideIos] = useState(() => { try { return !!localStorage.getItem('lindwyrm.iosTip'); } catch { return false; } });
   if (!notes.length && !pending && !newRoutines.length && (!ios || hideIos)) return null;
   return html`<div class="group banners rise">
-    ${notes.length > 0 && html`<div class="row" role="button" onClick=${() => goTab('together')}><span class="lead tint-rose">${notes.at(-1).kind === 'skip' ? '😔' : '💌'}</span><div class="grow"><b>${notes.at(-1).kind === 'skip' ? `${S.state.partner?.name} hoy no va al gym` : `Nota de ${S.state.partner?.name}`}</b><small class="muted">${notes.at(-1).text}</small></div><${Icon} name="right" size=${16} class="chev" /></div>`}
+    ${notes.length > 0 && html`<div class="row" role="button" onClick=${() => goTab('together')}><span class="lead tint-rose">${notes.at(-1).kind === 'skip' ? '😔' : '💌'}</span><div class="grow"><b>${notes.at(-1).kind === 'skip' ? `${S.state.partner?.name} hoy no fue al gym` : `Nota de ${S.state.partner?.name}`}</b><small class="muted">${notes.at(-1).text}</small></div><${Icon} name="right" size=${16} class="chev" /></div>`}
     ${newRoutines.length > 0 && html`<div class="row" role="button" onClick=${() => goTab('together')}><span class="lead tint-rose">🏋️</span><div class="grow"><b>${S.state.partner?.name} te recomendó una rutina</b><small class="muted">${newRoutines[0].name}</small></div><${Icon} name="right" size=${16} class="chev" /></div>`}
     ${pending > 0 && html`<div class="row" role="button" onClick=${() => goTab('rewards')}><span class="lead tint-rose">🎁</span><div class="grow"><b>${pending} idea${pending > 1 ? 's' : ''} por decidir</b><small class="muted">Tu pareja propuso un premio</small></div><${Icon} name="right" size=${16} class="chev" /></div>`}
     ${ios && !hideIos && html`<div class="row static"><span class="lead">📲</span><div class="grow"><b>Instálala como app</b><small class="muted">Safari → Compartir → Agregar a pantalla de inicio</small></div><button class="icon-btn flat" onClick=${() => { try { localStorage.setItem('lindwyrm.iosTip', '1'); } catch {} setHideIos(true); }} aria-label="Cerrar"><${Icon} name="x" size=${16} /></button></div>`}
@@ -147,7 +154,7 @@ function PartnerCard({ partner }) {
       <${Avatar} doc=${d || { name: partner.name }} size=${46} />
       <div class="grow">
         <b>${partner.name}</b>
-        <small class="muted">${!d ? 'Aún sin datos' : ck ? '✅ Ya entrenó hoy' : d.skips?.[L.ymd()] ? `😔 Hoy no va: ${d.skips[L.ymd()].reason}` : info.atRisk ? '⚠️ Hoy es su último día de margen' : 'Aún no entrena hoy'}</small>
+        <small class="muted">${!d ? 'Aún sin datos' : ck ? '✅ Ya entrenó hoy' : d.skips?.[L.ymd()] ? `😔 Hoy no fue: ${d.skips[L.ymd()].reason}` : info.atRisk ? '⚠️ Hoy es su último día de margen' : 'Aún no entrena hoy'}</small>
       </div>
       ${info && html`<div class="pc-streak"><${Flame} size=${22} lit=${info.alive} /><b>${info.current}</b></div>`}
     </button>

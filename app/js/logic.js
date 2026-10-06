@@ -39,7 +39,8 @@ export const normalizePhrase = (s) => String(s || '').normalize('NFD').replace(/
 export const pactOk = (s) => normalizePhrase(s) === normalizePhrase(PACT_PHRASE);
 
 // ---------- constantes de juego ----------
-export const EARN = { checkin: 10, pr: 5, week: 20, skip: 10 };
+export const EARN = { checkin: 10, pr: 5, week: 20 };
+export const PENALTY = { min: 1, max: 100 }; // puntos que la pareja puede quitar por un “hoy no fui”
 export const MILESTONES = { 3: 10, 7: 25, 14: 40, 30: 100, 60: 150, 100: 250 };
 // 24 colores para el acento personal (el selector también admite un color libre).
 export const PALETTE = [
@@ -272,9 +273,10 @@ export function recomputeAwards(doc, extra = {}) {
     }
   }
 
-  // “Hoy no voy”: resta puntos de amor, salvo que ese día al final sí entrenes o estés en pausa.
-  for (const [d, s] of Object.entries(doc.skips || {})) {
-    if (!doc.checkins[d] && !pausedBetween(doc, addDays(d, -1), d)) put(`skip:${d}`, -EARN.skip, `No fui: ${String(s.reason || '').slice(0, 60)}`, d);
+  // “Hoy no fui”: tu pareja decide cuántos puntos (1 a 100) te quita. Mientras no decida, no resta; si al final entrenas o estás en pausa, tampoco.
+  for (const [d, sk] of Object.entries(doc.skips || {})) {
+    const pts = Math.round(Number(extra.skipPenalties?.[d]));
+    if (pts >= PENALTY.min && !doc.checkins[d] && !pausedBetween(doc, addDays(d, -1), d)) put(`skip:${d}`, -Math.min(pts, PENALTY.max), `No fui: ${String(sk.reason || '').slice(0, 60)}`, d);
   }
 
   const best = new Map();
@@ -295,6 +297,7 @@ export function recomputeAwards(doc, extra = {}) {
   }
 
   const kept = doc.ledger.filter((e) => !e.key || want.has(e.key));
+  for (const e of kept) { const w = e.key && want.get(e.key); if (w && e.delta !== w.delta) { e.delta = w.delta; e.reason = w.reason; } } // p. ej. la pareja cambió la penalización
   const have = new Set(kept.map((e) => e.key).filter(Boolean));
   for (const w of want.values()) if (!have.has(w.key)) kept.push({ id: uid(), ts: Date.now(), ...w });
   doc.ledger = kept;

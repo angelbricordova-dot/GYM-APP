@@ -130,18 +130,20 @@ test('análisis del mes: solo cuenta desde que empezaste a usar la app', () => {
   assert.equal(L.monthReport(d, 2026, 9, '2026-10-02').expected, 0); // antes de empezar no se debe nada
 });
 
-test('“hoy no voy” resta puntos de amor; si ese día entrenas o estás en pausa, no resta', () => {
-  const d = doc(['2026-10-01'], { skips: { '2026-10-02': { reason: 'flojera', ts: 1 }, '2026-10-01': { reason: 'x', ts: 1 } } });
-  L.recomputeAwards(d);
+test('“hoy no fui”: resta lo que decida la pareja (1 a 100); sin decisión, si entrenas o en pausa, no resta', () => {
+  const d = doc(['2026-10-01'], { skips: { '2026-10-02': { reason: 'flojera', ts: 1 }, '2026-10-01': { reason: 'x', ts: 1 }, '2026-10-03': { reason: 'sueño', ts: 1 } } });
+  L.recomputeAwards(d, { skipPenalties: { '2026-10-02': 15, '2026-10-01': 50 } });
   const skips = d.ledger.filter((e) => e.key?.startsWith('skip:'));
-  assert.deepEqual(skips.map((e) => [e.key, e.delta]), [['skip:2026-10-02', -L.EARN.skip]]); // el 1 sí entrenó
+  assert.deepEqual(skips.map((e) => [e.key, e.delta]), [['skip:2026-10-02', -15]]); // el 1 sí entrenó; el 3 aún sin decidir
   assert.match(skips[0].reason, /flojera/);
-  assert.equal(L.balance(d), L.EARN.checkin - L.EARN.skip);
+  assert.equal(L.balance(d), L.EARN.checkin - 15);
+  L.recomputeAwards(d, { skipPenalties: { '2026-10-02': 5000 } }); // tope de 100
+  assert.equal(d.ledger.find((e) => e.key === 'skip:2026-10-02').delta, -100);
   d.checkins['2026-10-02'] = { ts: 1, time: '19:00' }; // al final sí fue
-  L.recomputeAwards(d);
+  L.recomputeAwards(d, { skipPenalties: { '2026-10-02': 15 } });
   assert.equal(d.ledger.some((e) => e.key?.startsWith('skip:')), false);
   const p = doc([], { skips: { '2026-10-05': { reason: 'viaje', ts: 1 } }, pauses: [{ from: '2026-10-03', to: null }] });
-  L.recomputeAwards(p);
+  L.recomputeAwards(p, { skipPenalties: { '2026-10-05': 30 } });
   assert.equal(L.balance(p), 0);
 });
 

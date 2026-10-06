@@ -6,6 +6,7 @@ import { Icon, Flame, Avatar, Segmented, Empty, toast, cx } from './kit.js';
 import { ChallengesPanel } from './challenges.js';
 import { RoutinesPanel } from './routines.js';
 import { SuppPanel } from './supplements.js';
+import { PenaltyForm } from './skip.js';
 import { shareInvite, copyInvite } from '../invite.js';
 import { openScreen, closeScreen } from './nav.js';
 import { Summary } from './progress.js';
@@ -88,8 +89,11 @@ function Note({ n, mine, partner }) {
   const color = mine ? S.state.me.color : partner.doc?.color || '#ff5c93';
   const when = new Date(n.ts).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
   return html`<article class=${cx('note', mine && 'mine', n.kind === 'skip' && 'skip')} style=${accentVars(color)}>
-    ${n.kind === 'skip' && html`<span class="skip-tag">😔 Hoy no fue al gym</span>`}
+    ${n.kind === 'skip' && html`<span class="skip-tag">😔 ${mine ? 'Hoy no fui al gym' : 'Hoy no fue al gym'}</span>`}
     <p>${n.text}</p>
+    ${n.kind === 'skip' && (n.penalty
+      ? html`<p class="skip-pen">−${n.penalty.points} puntos de amor</p>`
+      : mine ? html`<p class="muted small">Esperando a que ${partner.name} decida cuántos puntos te quita.</p>` : html`<${PenaltyForm} m=${n} name=${partner.name} />`)}
     <footer>
       <small>${mine ? 'Tú' : partner.name} · ${when}</small>
       <span class="note-actions">
