@@ -17,6 +17,7 @@ export function Auth() {
   const [inviter, setInviter] = useState('');
   const [pending, setPending] = useState(null); // { kind: 'pin' } | { kind: 'google', credential }
   const [phrase, setPhrase] = useState('');
+  const [rec, setRec] = useState({ names: null, name: '', pin: '', confirm: '', wipe: false }); // recuperar acceso
   const [link, setLink] = useState(null); // credencial de Google por vincular al entrar con PIN
 
   useEffect(() => {
@@ -80,6 +81,56 @@ export function Auth() {
     if (!res.ok) { setError(res.data.error || 'Algo salió mal.'); setMode('join'); }
   };
 
+  const refreshInfo = () => S.getStatus().then((r) => r.ok && setInfo(r.data));
+  const openRecover = () => { setError(''); setRec({ names: null, name: '', pin: '', confirm: '', wipe: false }); setMode('recover'); };
+  const recList = async () => {
+    setBusy(true); setError('');
+    const r = await S.recoverCall({ setupCode: f.setupCode, action: 'list' });
+    setBusy(false);
+    if (!r.ok) return setError(r.data.error || 'No se pudo verificar.');
+    setRec({ ...rec, names: r.data.names, name: r.data.names[0] || '' });
+  };
+  const recPin = async (e) => {
+    e.preventDefault(); setBusy(true); setError('');
+    const r = await S.recoverPin({ setupCode: f.setupCode, name: rec.name, pin: rec.pin });
+    setBusy(false);
+    if (!r.ok) setError(r.data.error || 'Algo salió mal.');
+  };
+  const recWipe = async () => {
+    setBusy(true); setError('');
+    const r = await S.recoverCall({ setupCode: f.setupCode, action: 'wipe', confirm: rec.confirm });
+    setBusy(false);
+    if (!r.ok) return setError(r.data.error || 'Algo salió mal.');
+    await refreshInfo();
+    setMode('welcome');
+  };
+
+  if (mode === 'recover') return html`<${Shell}>
+    <button class="back" onClick=${() => { setMode('login'); setError(''); }}><${Icon} name="left" size=${20} /> Atrás</button>
+    <h1>Recuperar mi acceso</h1>
+    ${!info?.needsSetupCode
+      ? html`<p class="lead">Para recuperar el acceso hace falta el <b>código de configuración</b>, y esta app todavía no tiene uno. En Netlify abre <b>Site configuration → Environment variables</b>, crea <b>SETUP_CODE</b> con una palabra secreta, vuelve a desplegar (<b>Deploys → Trigger deploy</b>) y regresa aquí.</p>`
+      : !rec.names
+        ? html`<p class="lead">Escribe el código de configuración (el valor de SETUP_CODE en Netlify).</p>
+          <${Field} label="Código de configuración"><input value=${f.setupCode} onInput=${set('setupCode')} autocomplete="off" autocapitalize="none" /><//>
+          ${error && html`<p class="notice" role="alert">${error}</p>`}
+          <button class="btn primary block lg" disabled=${!f.setupCode || busy} onClick=${recList}>${busy ? 'Un momento…' : 'Continuar'}</button>`
+        : !rec.wipe
+          ? html`<p class="lead">Elige quién eres y pon un PIN nuevo.</p>
+            <form class="stack" onSubmit=${recPin}>
+              <div class="chips">${rec.names.map((n) => html`<button type="button" class=${cx('chip pick', rec.name === n && 'on')} onClick=${() => setRec({ ...rec, name: n })}>${n}</button>`)}</div>
+              <${Field} label="PIN nuevo (4 a 8 números)"><input type="password" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="8" value=${rec.pin} onInput=${(e) => setRec({ ...rec, pin: e.target.value })} autocomplete="new-password" required /><//>
+              ${error && html`<p class="notice" role="alert">${error}</p>`}
+              <button class="btn primary block lg" disabled=${busy || !rec.name}>${busy ? 'Un momento…' : 'Guardar PIN y entrar'}</button>
+            </form>
+            <button class="link danger" onClick=${() => { setError(''); setRec({ ...rec, wipe: true }); }}>Mejor borrar todo y empezar de cero</button>`
+          : html`<div class="skip-warn"><span>⚠️</span><p><b>Esto borra todo</b>: las cuentas de los dos, entrenos, fotos, puntos, notas y retos. No se puede deshacer. Después podrás crear el espacio de nuevo.</p></div>
+            <${Field} label="Escribe BORRAR para confirmar"><input value=${rec.confirm} onInput=${(e) => setRec({ ...rec, confirm: e.target.value })} autocomplete="off" autocapitalize="characters" /><//>
+            ${error && html`<p class="notice" role="alert">${error}</p>`}
+            <button class="btn bad block lg" disabled=${busy || rec.confirm.trim().toUpperCase() !== 'BORRAR'} onClick=${recWipe}>${busy ? 'Borrando…' : 'Borrar todo'}</button>
+            <button class="link" onClick=${() => setRec({ ...rec, wipe: false, confirm: '' })}>Cancelar</button>`}
+  <//>`;
+
   const invite = created?.data.inviteCode || '';
   if (mode === 'invite') return html`<${Shell}>
     <h1>¡Espacio creado!</h1>
@@ -125,6 +176,7 @@ export function Auth() {
     ${info?.googleClientId && html`<${GoogleButton} clientId=${info.googleClientId} onCredential=${withGoogle} text="signin_with" key="exists" />`}
     ${error && html`<p class="notice" role="alert">${error}</p>`}
     <button class="btn primary block lg" onClick=${() => { setError(''); setMode('login'); }}>Entrar con nombre y PIN</button>
+    <button class="link" onClick=${openRecover}>Olvidé mi nombre o mi PIN</button>
     ${!info?.full && html`<button class="btn tinted block lg" onClick=${() => { setError(''); setMode('join'); }}>Unirme con código</button>`}
   <//>`;
 
@@ -159,6 +211,7 @@ export function Auth() {
       <//>
       ${error && html`<p class="notice" role="alert">${error}</p>`}
       <button class="btn primary block lg" disabled=${busy}>${busy ? 'Un momento…' : mode === 'login' ? 'Entrar' : mode === 'join' ? 'Continuar' : 'Crear espacio'}</button>
+      ${mode === 'login' && html`<button type="button" class="link" onClick=${openRecover}>Olvidé mi nombre o mi PIN</button>`}
     </form>
   <//>`;
 }

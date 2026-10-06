@@ -80,6 +80,10 @@ No necesitas configurar nada: las llaves (VAPID) se generan solas la primera vez
 - El **recordatorio diario** lo manda una función programada de Netlify (`netlify/functions/reminders.mjs`, cada hora). Corre solo en el sitio publicado, no en `npm run dev`.
 - Si cambias el dominio del sitio, desactiva y vuelve a activar las notificaciones en cada teléfono.
 
+## ¿Olvidaste tu nombre o tu PIN?
+
+En la pantalla de entrar toca **Olvidé mi nombre o mi PIN**. Pide el `SETUP_CODE` de Netlify (por eso conviene tenerlo definido: sin él **no hay recuperación**, para que nadie con la URL pueda apoderarse del espacio). Con el código ves los nombres de las dos personas, eliges quién eres y pones un **PIN nuevo**; también existe *Borrar todo y empezar de cero* (pide escribir BORRAR). Cinco fallos seguidos con el código bloquean 10 minutos. El nombre al entrar ya no distingue mayúsculas ni acentos (“angel” = “Ángel”).
+
 ## Reiniciar y eliminar
 
 - **Reiniciar de cero** (*Perfil → Zona de peligro*): borra tus entrenos, check-ins, fotos, peso, puntos de amor, rutinas y pausas. Conserva tu cuenta, ajustes, foto y color; tu pareja no pierde nada. Los retos que te habían puesto y seguían pendientes se cancelan, y los puntos de retos anteriores no vuelven.

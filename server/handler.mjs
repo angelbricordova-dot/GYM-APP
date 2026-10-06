@@ -1,7 +1,7 @@
 // API de Lindwyrm (un solo handler para Netlify Functions y para el servidor local).
 // Espacio para exactamente 2 personas. Cada una es dueña de su propio documento (`user/<id>.doc`);
 // lo compartido (propuestas, cupones, mensajes, fotos) vive en claves aparte para que no se pisen.
-import { randomBytes, randomUUID, scrypt, timingSafeEqual, createHmac, createPublicKey, verify as cryptoVerify } from 'node:crypto';
+import { randomBytes, randomUUID, scrypt, timingSafeEqual, createHmac, createHash, createPublicKey, verify as cryptoVerify } from 'node:crypto';
 import { createStorage } from './storage.mjs';
 import { createPush, DEFAULT_PREFS } from './push.mjs';
 import * as L from '../app/js/logic.js';
@@ -22,7 +22,7 @@ const json = (status, body, headers = {}) =>
 const fail = (status, error) => json(status, { error });
 
 const clean = (s, max) => String(s ?? '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, max);
-const norm = (s) => clean(s, 40).toLowerCase();
+const norm = (s) => clean(s, 40).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); // sin acentos ni mayúsculas: “angel” entra como “Ángel”
 const b64 = (buf) => Buffer.from(buf).toString('base64url');
 
 // ---------- contraseñas y tokens ----------
@@ -235,6 +235,50 @@ async function login(body) {
   }
   await db.set(`user/${user.id}`, user);
   return json(200, { token: await sign(user.id), uid: user.id });
+}
+
+/**
+ * Recuperar el acceso (olvidé nombre o PIN): solo con SETUP_CODE, el secreto que solo controla quien administra el sitio en Netlify.
+ * Sin SETUP_CODE definido no hay recuperación (cualquiera con la URL podría apoderarse del espacio).
+ * Acciones: list (nombres de las personas), pin (nuevo PIN y entrar), wipe (borrar todo; el espacio queda libre para crearse de nuevo).
+ */
+async function recover(body) {
+  const secret = process.env.SETUP_CODE;
+  if (!secret) return fail(403, 'Para recuperar el acceso define SETUP_CODE en Netlify (Environment variables) y vuelve a desplegar.');
+  const meta = await db.get('meta');
+  if (!meta) return fail(404, 'Aún no existe el espacio.');
+  const f = meta.recoverFails || { n: 0, until: 0 };
+  if (f.until > Date.now()) return fail(429, 'Demasiados intentos. Espera unos minutos.');
+  const h = (x) => createHash('sha256').update(String(x ?? '')).digest();
+  if (!timingSafeEqual(h(body.setupCode), h(secret))) {
+    f.n += 1;
+    if (f.n >= 8) { f.until = Date.now() + 10 * 60_000; f.n = 0; }
+    meta.recoverFails = f;
+    await db.set('meta', meta);
+    return fail(403, 'Código de configuración incorrecto.');
+  }
+  if (f.n || f.until) { meta.recoverFails = { n: 0, until: 0 }; await db.set('meta', meta); }
+
+  const users = (await Promise.all(meta.users.map((id) => db.get(`user/${id}`)))).filter(Boolean);
+  if (body.action === 'list') return json(200, { names: users.map((u) => u.name) });
+  if (body.action === 'pin') {
+    const user = users.find((u) => norm(u.name) === norm(body.name));
+    if (!user) return fail(404, 'No encuentro a esa persona.');
+    if (!/^\d{4,8}$/.test(String(body.pin))) return fail(400, 'El PIN debe tener de 4 a 8 números.');
+    const salt = randomBytes(16);
+    user.salt = salt.toString('base64');
+    user.hash = (await hashPin(String(body.pin), salt)).toString('base64');
+    user.fails = 0; user.lockUntil = 0;
+    await db.set(`user/${user.id}`, user);
+    return json(200, { token: await sign(user.id), uid: user.id });
+  }
+  if (body.action === 'wipe') {
+    if (String(body.confirm || '').trim().toUpperCase() !== 'BORRAR') return fail(400, 'Escribe BORRAR para confirmar.');
+    for (const prefix of ['user/', 'proposal/', 'voucher/', 'message/', 'challenge/', 'routine/', 'photo/', 'evidence/']) for (const k of await db.list(prefix)) await db.del(k);
+    await db.del('meta');
+    return json(200, { ok: true });
+  }
+  return fail(400, 'Acción inválida.');
 }
 
 const partnerOf = async (user) => (await db.get('meta')).users.find((id) => id !== user.id);
@@ -590,6 +634,7 @@ export default async function handler(req) {
     if (m === 'POST' && path === '/join') return await join(await body());
     if (m === 'POST' && path === '/auth/google') return await googleAuth(await body());
     if (m === 'POST' && path === '/login') return await login(await body());
+    if (m === 'POST' && path === '/recover') return await recover(await body());
 
     const user = await authUser(req);
     if (!user) return await fail(401, 'Sesión no válida. Vuelve a entrar.');

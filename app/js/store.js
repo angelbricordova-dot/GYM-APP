@@ -86,6 +86,8 @@ async function startSession(res) {
 export const createSpace = (body) => call('POST', '/setup', body);
 export const beginSession = startSession;
 export const joinSpace = async (body) => startSession(await call('POST', '/join', body));
+export const recoverCall = (body) => call('POST', '/recover', body);
+export const recoverPin = async (body) => startSession(await call('POST', '/recover', { ...body, action: 'pin' }));
 export const login = async (body) => startSession(await call('POST', '/login', body));
 
 export function logout() {
