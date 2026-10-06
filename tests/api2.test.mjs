@@ -108,3 +108,18 @@ test('tablero de motivación: corazones y borrado solo del autor', async () => {
   assert.equal((await call('POST', `/messages/${m.id}/delete`, { token: A.token })).status, 200);
   assert.equal((await call('GET', '/sync', { token: A.token })).data.messages.some((x) => x.id === m.id), false);
 });
+
+test('“hoy no voy”: la nota llega a la pareja como tipo skip y el documento con skips y suplementos se guarda', async () => {
+  const r = await call('POST', '/messages', { token: A.token, body: { text: 'No fui porque me dio flojera', kind: 'skip' } });
+  assert.equal(r.data.message.kind, 'skip');
+  const seen = (await call('GET', '/sync', { token: B.token })).data.messages.find((x) => x.id === r.data.message.id);
+  assert.equal(seen.kind, 'skip');
+  const me = (await call('GET', '/sync', { token: A.token })).data.me;
+  me.skips = { '2026-10-06': { reason: 'flojera', ts: 1 } };
+  me.suppLog = { '2026-10-06': ['creatina'] };
+  me.updatedAt += 1;
+  assert.equal((await call('PUT', '/me', { token: A.token, body: { doc: me } })).status, 200);
+  const partnerView = (await call('GET', '/sync', { token: B.token })).data.partner.doc;
+  assert.deepEqual(partnerView.suppLog['2026-10-06'], ['creatina']);
+  assert.equal(partnerView.skips['2026-10-06'].reason, 'flojera');
+});

@@ -85,7 +85,7 @@ export function createPush(db) {
         hour = Number(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hourCycle: 'h23', timeZone: tz }).format(now));
         date = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now); // YYYY-MM-DD
       } catch { continue; }
-      if (hour !== prefs.reminderHour || user.lastReminder === date || user.doc.checkins?.[date]) continue;
+      if (hour !== prefs.reminderHour || user.lastReminder === date || user.doc.checkins?.[date] || user.doc.skips?.[date]) continue;
       const info = L.streakInfo(user.doc, date);
       if (info.paused) continue;
       const body = info.atRisk ? `Hoy es el último día para mantener tu racha de ${info.current} días 🔥` : info.alive && info.current > 0 ? `Tu racha de ${info.current} días te espera. ¿Hoy entrenas?` : '¿Hoy toca gym? Un entreno empieza tu racha.';

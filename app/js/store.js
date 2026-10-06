@@ -196,6 +196,34 @@ export function logWeight(kg, date = L.ymd()) {
 export const startPause = (reason = '') => update((me) => { me.pauses.push({ from: L.ymd(), to: null, reason }); });
 export const endPause = () => update((me) => { for (const p of me.pauses) if (!p.to) p.to = L.ymd(); });
 
+// ---------- suplementos ----------
+export const toggleSupp = (id, date = L.ymd()) => update((me) => {
+  me.suppLog = me.suppLog || {};
+  const set = new Set(me.suppLog[date] || []);
+  set.has(id) ? set.delete(id) : set.add(id);
+  me.suppLog[date] = [...set];
+  for (const d of Object.keys(me.suppLog).sort().slice(0, -120)) delete me.suppLog[d]; // solo guarda ~4 meses
+});
+export const addSupp = ({ name, emoji, when }) => update((me) => {
+  const n = String(name || '').trim().slice(0, 30);
+  if (!n) return;
+  me.supps = [...L.suppList(me), { id: L.uid(), name: n, emoji: String(emoji || '💊').slice(0, 4), when: when === 'gym' ? 'gym' : 'daily' }];
+});
+export const removeSupp = (id) => update((me) => { me.supps = L.suppList(me).filter((x) => x.id !== id); });
+
+// ---------- “hoy no voy” ----------
+/** Cuenta la razón, se la manda a tu pareja y resta puntos de amor (se revierte si al final sí entrenas ese día). */
+export async function skipToday(reason) {
+  const text = String(reason || '').trim().slice(0, 140);
+  const date = L.ymd();
+  if (!text) return { ok: false, data: { error: 'Escribe la razón.' } };
+  if (state.me.checkins[date] || state.me.skips?.[date]) return { ok: false, data: { error: 'Hoy ya está registrado.' } };
+  update((me) => { me.skips = me.skips || {}; me.skips[date] = { reason: text, ts: Date.now() }; });
+  const res = await call('POST', '/messages', { text, kind: 'skip' });
+  if (res.ok) await syncNow();
+  return { ok: true, sent: res.ok, data: res.data };
+}
+
 export const saveRoutine = (r) => update((me) => { me.routines = me.routines.filter((x) => x.id !== r.id).concat(r); });
 export const deleteRoutine = (id) => update((me) => { me.routines = me.routines.filter((x) => x.id !== id); });
 export const deleteSession = (id) => update((me) => { me.sessions = me.sessions.filter((s) => s.id !== id); });

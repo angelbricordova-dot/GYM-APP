@@ -106,13 +106,27 @@ export function Auth() {
     </div>
   <//>`;
 
+  if (mode === 'exists') return html`<${Shell}>
+    <button class="back" onClick=${() => setMode('welcome')}><${Icon} name="left" size=${20} /> Atrás</button>
+    <h1>Ya hay un espacio creado</h1>
+    <p class="lead">Lindwyrm es un espacio privado para dos personas y en esta app ya se creó uno${info?.full ? ' con sus dos integrantes' : ''}.</p>
+    <div class="group">
+      <div class="row static"><span class="lead tint-rose">🔑</span><div class="grow"><b>Si eres tú, el anfitrión</b><small class="muted">Entra con tu nombre y PIN (o con Google).</small></div></div>
+      ${!info?.full && html`<div class="row static"><span class="lead tint-rose">💌</span><div class="grow"><b>Si te invitaron</b><small class="muted">Usa el enlace o el código de invitación.</small></div></div>`}
+      <div class="row static"><span class="lead tint-rose">🌱</span><div class="grow"><b>Si quieres empezar de nuevo</b><small class="muted">Entra y usa Perfil → Eliminar mi usuario. Cuando no quede nadie, el espacio queda libre para crearse otra vez.</small></div></div>
+    </div>
+    <button class="btn primary block lg" onClick=${() => { setError(''); setMode('login'); }}>Entrar</button>
+    ${!info?.full && html`<button class="btn tinted block lg" onClick=${() => { setError(''); setMode('join'); }}>Unirme con código</button>`}
+  <//>`;
+
   if (mode === 'welcome') return html`<${Shell} hero>
     <h1>Lindwyrm</h1>
     <p class="lead">Entrenen juntos, sigan su racha y ganen puntos de amor. Una app privada solo para ustedes dos.</p>
     ${info?.offline && html`<p class="notice">No pude conectar con el servidor. Revisa tu internet.</p>`}
     ${error && html`<p class="notice" role="alert">${error}</p>`}
     <div class="stack">
-      ${info && !info.setup && html`<button class="btn primary block lg" onClick=${() => setMode('setup')}>Crear nuestro espacio</button>`}
+      ${info && !info.setup && html`<button class="btn primary block lg" onClick=${() => setMode('setup')}>Crear cuenta · Crear nuestro espacio</button>`}
+      ${info?.setup && html`<button class="btn tinted block lg" onClick=${() => { setError(''); setMode('exists'); }}>Crear cuenta nueva (anfitrión)</button>`}
       ${info?.setup && !info.full && html`<button class="btn primary block lg" onClick=${() => { setError(''); setMode('join'); }}>Unirme con código</button>`}
       ${info?.setup && html`<button class=${cx('btn block lg', info.full ? 'primary' : 'tinted')} onClick=${() => { setError(''); setMode('login'); }}>Ya tengo cuenta · Entrar</button>`}
       ${!info && html`<div class="spinner"></div>`}

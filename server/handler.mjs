@@ -350,7 +350,7 @@ async function doneVoucher(id) {
 
 async function postMessage(user, body) {
   const text = clean(body.text, 280);
-  const kind = ['cheer', 'text', 'reaction'].includes(body.kind) ? body.kind : 'text';
+  const kind = ['cheer', 'text', 'reaction', 'skip'].includes(body.kind) ? body.kind : 'text';
   if (!text) return fail(400, 'Escribe algo.');
   const id = randomUUID();
   const ref = body.ref && typeof body.ref === 'object' ? { uid: clean(body.ref.uid, 60), date: clean(body.ref.date, 10) } : null;
@@ -358,7 +358,9 @@ async function postMessage(user, body) {
   await db.set(`message/${String(m.ts).padStart(13, '0')}-${id}`, m);
   await tell(user, kind === 'reaction'
     ? { type: 'notes', title: `${first(user.name)} reaccionó ${text} a tu entreno`, url: '/?tab=together' }
-    : { type: 'notes', title: `💌 Nota de ${first(user.name)}`, body: text, url: '/?tab=together' });
+    : kind === 'skip'
+      ? { type: 'notes', title: `😔 ${first(user.name)} hoy no va al gym`, body: text, url: '/?tab=together' }
+      : { type: 'notes', title: `💌 Nota de ${first(user.name)}`, body: text, url: '/?tab=together' });
   return json(200, { message: m });
 }
 
@@ -508,7 +510,7 @@ async function resetMe(user) {
   const now = Date.now();
   user.doc = {
     ...emptyDoc(user.id, user.name, { color: d.color }),
-    avatar: d.avatar, heightCm: d.heightCm, weeklyGoal: d.weeklyGoal, restDays: d.restDays, shareWeight: d.shareWeight, tz: d.tz, onboarded: d.onboarded,
+    avatar: d.avatar, supps: d.supps, heightCm: d.heightCm, weeklyGoal: d.weeklyGoal, restDays: d.restDays, shareWeight: d.shareWeight, tz: d.tz, onboarded: d.onboarded,
     resetAt: now, createdAt: now, updatedAt: Math.max(now, d.updatedAt + 1),
   };
   await db.set(`user/${user.id}`, user);

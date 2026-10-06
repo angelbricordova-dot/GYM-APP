@@ -58,7 +58,14 @@ export function Workout() {
     const st = ex.sets.find((s) => s.id === setId);
     if (!st.done && !(L.num(st.reps) > 0)) { toast('Pon las repeticiones primero', { icon: '☝️' }); return; }
     haptic();
-    edit((d) => { const s = d.exercises.find((e) => e.id === exId).sets.find((s) => s.id === setId); s.done = !s.done; });
+    edit((d) => {
+      const e = d.exercises.find((x) => x.id === exId);
+      const i = e.sets.findIndex((x) => x.id === setId);
+      const s = e.sets[i];
+      s.done = !s.done;
+      // la siguiente serie aparece con el mismo registro: solo hay que subirle o bajarle
+      if (s.done) { const next = e.sets.slice(i + 1).find((x) => !x.done); if (next) { next.kg = s.kg; next.reps = s.reps; } }
+    });
     if (!st.done) { const total = restDefault(); setRest({ endsAt: Date.now() + total * 1000, total }); }
   };
 
@@ -98,6 +105,10 @@ function ExerciseCard({ ex, doc, edit, toggle }) {
   const complete = ex.sets.length > 0 && doneN === ex.sets.length;
   const [open, setOpen] = useState(null); // null = automático: se pliega al completarse
   const expanded = open ?? !complete;
+  const activeIdx = ex.sets.findIndex((s) => !s.done);
+  const active = activeIdx >= 0 ? ex.sets[activeIdx] : null;
+  const doneSets = ex.sets.map((s, i) => ({ s, i })).filter(({ s }) => s.done);
+  const addSet = () => edit((d) => { const e = d.exercises.find((x) => x.id === ex.id); const l = e.sets.at(-1) || { kg: '', reps: '' }; e.sets.push({ id: uid(), kg: l.kg, reps: l.reps, done: false }); setOpen(true); });
   const upd = (setId, field) => (v) => edit((d) => { d.exercises.find((e) => e.id === ex.id).sets.find((s) => s.id === setId)[field] = v; });
 
   if (!expanded) {
@@ -121,17 +132,19 @@ function ExerciseCard({ ex, doc, edit, toggle }) {
       <span class=${cx('ex-prog', complete && 'ok')} aria-label=${`${doneN} de ${ex.sets.length} series`}>${doneN}/${ex.sets.length}</span>
       <button class="icon-btn flat" onClick=${() => { if (confirm(`¿Quitar ${ex.name} del entreno?`)) edit((d) => { d.exercises = d.exercises.filter((e) => e.id !== ex.id); }); }} aria-label="Quitar ejercicio"><${Icon} name="trash" size=${17} /></button>
     </header>
-    <div class="sets">
-      ${ex.sets.map((s, i) => html`<div class=${cx('set-row', s.done && 'done')} key=${s.id}>
-        <div class="set-id"><span class="set-n">${i + 1}</span><span class="set-prev">${prev[i] ? `${prev[i].reps}×${prev[i].kg || 'PC'}` : ''}</span></div>
-        <${NumField} value=${s.kg} onChange=${upd(s.id, 'kg')} step=${2.5} decimal unit="kg" label="Kilos" done=${s.done} />
-        <${NumField} value=${s.reps} onChange=${upd(s.id, 'reps')} step=${1} unit="reps" label="Repeticiones" done=${s.done} />
-        <button class=${cx('tick', s.done && 'on')} onClick=${() => toggle(ex.id, s.id)} aria-label=${s.done ? 'Desmarcar serie' : 'Marcar serie hecha'} aria-pressed=${s.done}><${Icon} name="check" size=${22} sw=${3} /></button>
-      </div>`)}
-    </div>
+    ${doneSets.length > 0 && html`<div class="set-chips">${doneSets.map(({ s, i }) => html`<button class="set-chip" key=${s.id} onClick=${() => toggle(ex.id, s.id)} aria-label=${`Serie ${i + 1} hecha: ${s.reps} repeticiones. Toca para deshacer`}><b>${i + 1}</b>${s.kg ? `${s.kg} kg × ${s.reps}` : `${s.reps} reps`}</button>`)}</div>`}
+    ${active
+      ? html`<div class="set-row active" key=${active.id}>
+        <div class="set-id"><span class="set-n">${activeIdx + 1}</span><span class="set-prev">${prev[activeIdx] ? `${prev[activeIdx].reps}×${prev[activeIdx].kg || 'PC'}` : ''}</span></div>
+        <${NumField} value=${active.kg} onChange=${upd(active.id, 'kg')} step=${2.5} decimal unit="kg" label="Kilos" />
+        <${NumField} value=${active.reps} onChange=${upd(active.id, 'reps')} step=${1} unit="reps" label="Repeticiones" />
+        <button class="tick" onClick=${() => toggle(ex.id, active.id)} aria-label="Marcar serie hecha"><${Icon} name="check" size=${22} sw=${3} /></button>
+      </div>
+      <p class="set-hint muted small">Serie ${activeIdx + 1} de ${ex.sets.length}${ex.sets.length - activeIdx - 1 > 0 ? ` · faltan ${ex.sets.length - activeIdx - 1}` : ' · la última'}</p>`
+      : html`<p class="set-hint muted small">¡Series completas! ¿Una más?</p>`}
     <footer>
-      <button class="add-set" onClick=${() => edit((d) => { const e = d.exercises.find((x) => x.id === ex.id); const l = e.sets.at(-1) || { kg: '', reps: '' }; e.sets.push({ id: uid(), kg: l.kg, reps: l.reps, done: false }); })}><${Icon} name="plus" size=${16} sw=${2.4} /> Agregar serie</button>
-      ${ex.sets.length > 1 && html`<button class="link muted" onClick=${() => edit((d) => { d.exercises.find((x) => x.id === ex.id).sets.pop(); })}>Quitar última</button>`}
+      <button class="add-set" onClick=${addSet}><${Icon} name="plus" size=${16} sw=${2.4} /> ${active ? 'Agregar serie' : 'Otra serie igual'}</button>
+      ${ex.sets.length > 1 && !ex.sets.at(-1).done && html`<button class="link muted" onClick=${() => edit((d) => { d.exercises.find((x) => x.id === ex.id).sets.pop(); })}>Quitar última</button>`}
     </footer>
   </section>`;
 }

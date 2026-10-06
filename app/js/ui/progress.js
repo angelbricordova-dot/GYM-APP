@@ -23,9 +23,11 @@ export function Summary({ doc, isMe }) {
   const now = new Date();
   const [mo, setMo] = useState({ y: now.getFullYear(), m: now.getMonth(), dir: 0 });
   const [day, setDay] = useState(null);
+  const [allPhotos, setAllPhotos] = useState(false);
   const isCurrent = mo.y === now.getFullYear() && mo.m === now.getMonth();
   const shift = (d) => { const n = new Date(mo.y, mo.m + d, 1); if (n > new Date(now.getFullYear(), now.getMonth(), 1)) return; setMo({ y: n.getFullYear(), m: n.getMonth(), dir: d }); };
   const trend = L.monthlyCounts(doc, 6);
+  const photoCount = Object.values(doc.checkins).filter((c) => c.photo).length;
 
   return html`<div class="stack-lg">
     <div class="month-nav">
@@ -41,7 +43,11 @@ export function Summary({ doc, isMe }) {
       <p class="muted small">Días de gym por mes: así se ve tu constancia con el paso del tiempo.</p>
     </section>
     <${StatGrid} doc=${doc} />
-    <section class="card rise" style="--i:3"><h2>${isMe ? 'Mis fotos' : 'Sus fotos'}</h2><${Gallery} doc=${doc} onDay=${setDay} /></section>
+    <section class="card rise" style="--i:3">
+      <div class="row-between"><h2>${isMe ? 'Mis fotos' : 'Sus fotos'}${photoCount > 0 ? html` <small class="muted">· ${photoCount}</small>` : ''}</h2>${photoCount > 12 && html`<button class="btn tinted sm" onClick=${() => setAllPhotos(true)}>Ver todas</button>`}</div>
+      <${Gallery} doc=${doc} onDay=${setDay} />
+    </section>
+    ${allPhotos && html`<${Sheet} title=${isMe ? 'Todas mis fotos' : 'Todas sus fotos'} full onClose=${() => setAllPhotos(false)}><${Gallery} doc=${doc} onDay=${(d) => { setAllPhotos(false); setDay(d); }} limit=${Infinity} /><//>`}
     ${day && html`<${DaySheet} doc=${doc} date=${day} isMe=${isMe} onClose=${() => setDay(null)} />`}
   </div>`;
 }

@@ -5,6 +5,7 @@ import { accentVars } from '../theme.js';
 import { Icon, Flame, Avatar, Segmented, Empty, toast, cx } from './kit.js';
 import { ChallengesPanel } from './challenges.js';
 import { RoutinesPanel } from './routines.js';
+import { SuppPanel } from './supplements.js';
 import { shareInvite, copyInvite } from '../invite.js';
 import { openScreen, closeScreen } from './nav.js';
 import { Summary } from './progress.js';
@@ -39,10 +40,12 @@ export function Together() {
       { id: 'challenges', label: 'Retos', badge: pending || null },
       { id: 'board', label: 'Motivación', badge: notes || null },
       { id: 'routines', label: 'Rutinas', badge: routines || null },
+      { id: 'supps', label: 'Suplementos' },
     ]} />
     ${tab === 'challenges' && html`<${ChallengesPanel} />`}
     ${tab === 'board' && html`<${Board} partner=${partner} />`}
     ${tab === 'routines' && html`<${RoutinesPanel} />`}
+    ${tab === 'supps' && html`<${SuppPanel} />`}
   </div>`;
 }
 
@@ -84,7 +87,8 @@ function Note({ n, mine, partner }) {
   const liked = (n.likes || []).includes(me);
   const color = mine ? S.state.me.color : partner.doc?.color || '#ff5c93';
   const when = new Date(n.ts).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
-  return html`<article class=${cx('note', mine && 'mine')} style=${accentVars(color)}>
+  return html`<article class=${cx('note', mine && 'mine', n.kind === 'skip' && 'skip')} style=${accentVars(color)}>
+    ${n.kind === 'skip' && html`<span class="skip-tag">😔 Hoy no fue al gym</span>`}
     <p>${n.text}</p>
     <footer>
       <small>${mine ? 'Tú' : partner.name} · ${when}</small>

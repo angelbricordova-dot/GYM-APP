@@ -39,7 +39,7 @@ export const normalizePhrase = (s) => String(s || '').normalize('NFD').replace(/
 export const pactOk = (s) => normalizePhrase(s) === normalizePhrase(PACT_PHRASE);
 
 // ---------- constantes de juego ----------
-export const EARN = { checkin: 10, pr: 5, week: 20 };
+export const EARN = { checkin: 10, pr: 5, week: 20, skip: 10 };
 export const MILESTONES = { 3: 10, 7: 25, 14: 40, 30: 100, 60: 150, 100: 250 };
 // 24 colores para el acento personal (el selector también admite un color libre).
 export const PALETTE = [
@@ -59,7 +59,7 @@ export const onColor = (hex) => (contrast(hex, '#ffffff') >= 3.5 ? '#ffffff' : '
 export function newDoc(id, name, color = PALETTE[6]) {
   return {
     v: 2, id, name, color, avatar: null, heightCm: null, weeklyGoal: 3, restDays: 2, shareWeight: false,
-    weights: [], sessions: [], checkins: {}, pauses: [], ledger: [], routines: [],
+    weights: [], sessions: [], checkins: {}, pauses: [], ledger: [], routines: [], skips: {}, suppLog: {},
     createdAt: Date.now(), updatedAt: Date.now(),
   };
 }
@@ -272,6 +272,11 @@ export function recomputeAwards(doc, extra = {}) {
     }
   }
 
+  // “Hoy no voy”: resta puntos de amor, salvo que ese día al final sí entrenes o estés en pausa.
+  for (const [d, s] of Object.entries(doc.skips || {})) {
+    if (!doc.checkins[d] && !pausedBetween(doc, addDays(d, -1), d)) put(`skip:${d}`, -EARN.skip, `No fui: ${String(s.reason || '').slice(0, 60)}`, d);
+  }
+
   const best = new Map();
   for (const s of sorted(doc)) {
     for (const ex of s.exercises) {
@@ -298,6 +303,25 @@ export function recomputeAwards(doc, extra = {}) {
 
 export const balance = (doc) => doc.ledger.reduce((a, e) => a + e.delta, 0);
 export const ledgerSorted = (doc) => [...doc.ledger].sort((a, b) => b.date.localeCompare(a.date) || b.ts - a.ts);
+
+// ---------- suplementos ----------
+export const DEFAULT_SUPPS = [
+  { id: 'creatina', name: 'Creatina', emoji: '⚡', when: 'gym' },
+  { id: 'proteina', name: 'Proteína', emoji: '🥤', when: 'gym' },
+];
+/** Mi lista de suplementos: creatina y proteína por defecto, más lo que agregue. */
+export const suppList = (doc) => doc.supps ?? DEFAULT_SUPPS;
+export const suppTaken = (doc, date = ymd()) => new Set(doc.suppLog?.[date] || []);
+/** Últimos 7 días (terminando en hoy): 'all' si tomó todo, 'some' si tomó algo, 'none' si nada. */
+export function suppWeek(doc, today = ymd()) {
+  const list = suppList(doc);
+  return Array.from({ length: 7 }, (_, i) => {
+    const date = addDays(today, i - 6);
+    const n = list.filter((x) => suppTaken(doc, date).has(x.id)).length;
+    return { date, today: date === today, state: list.length && n === list.length ? 'all' : n ? 'some' : 'none' };
+  });
+}
+export const skipToday = (doc, today = ymd()) => doc.skips?.[today] || null;
 
 // ---------- ejercicios comunes (para agregar rápido) ----------
 export const LIBRARY = [

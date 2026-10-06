@@ -132,7 +132,7 @@ export function Onboarding({ onClose }) {
     onClose();
   };
   return html`<div class="screen onboarding">
-    <div class="screen-body center-col">
+    <div class="screen-body center-col"><div class="ob-in">
       <div class="logo-mark"><${Icon} name="heart" size=${40} fill /></div>
       <h1>Cuéntanos de ti</h1>
       <p class="muted center">Solo para calcular tu progreso. Tu peso es privado.</p>
@@ -142,7 +142,7 @@ export function Onboarding({ onClose }) {
         <button class="btn primary block lg" onClick=${() => finish(false)}>Empezar</button>
         <button class="link" onClick=${() => finish(true)}>Saltar por ahora</button>
       </div>
-    </div>
+    </div></div>
   </div>`;
 }
 

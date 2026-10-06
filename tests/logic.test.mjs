@@ -129,3 +129,31 @@ test('análisis del mes: solo cuenta desde que empezaste a usar la app', () => {
   assert.equal(r.prev, null); // septiembre: aún no usaba la app
   assert.equal(L.monthReport(d, 2026, 9, '2026-10-02').expected, 0); // antes de empezar no se debe nada
 });
+
+test('“hoy no voy” resta puntos de amor; si ese día entrenas o estás en pausa, no resta', () => {
+  const d = doc(['2026-10-01'], { skips: { '2026-10-02': { reason: 'flojera', ts: 1 }, '2026-10-01': { reason: 'x', ts: 1 } } });
+  L.recomputeAwards(d);
+  const skips = d.ledger.filter((e) => e.key?.startsWith('skip:'));
+  assert.deepEqual(skips.map((e) => [e.key, e.delta]), [['skip:2026-10-02', -L.EARN.skip]]); // el 1 sí entrenó
+  assert.match(skips[0].reason, /flojera/);
+  assert.equal(L.balance(d), L.EARN.checkin - L.EARN.skip);
+  d.checkins['2026-10-02'] = { ts: 1, time: '19:00' }; // al final sí fue
+  L.recomputeAwards(d);
+  assert.equal(d.ledger.some((e) => e.key?.startsWith('skip:')), false);
+  const p = doc([], { skips: { '2026-10-05': { reason: 'viaje', ts: 1 } }, pauses: [{ from: '2026-10-03', to: null }] });
+  L.recomputeAwards(p);
+  assert.equal(L.balance(p), 0);
+});
+
+test('suplementos: creatina y proteína por defecto, lista propia y semana', () => {
+  const d = doc([]);
+  assert.deepEqual(L.suppList(d).map((x) => x.id), ['creatina', 'proteina']);
+  d.suppLog = { '2026-10-06': ['creatina', 'proteina'], '2026-10-05': ['creatina'] };
+  const w = L.suppWeek(d, '2026-10-06');
+  assert.equal(w.length, 7);
+  assert.deepEqual([w[6].state, w[5].state, w[4].state], ['all', 'some', 'none']);
+  d.supps = [{ id: 'm', name: 'Multi', emoji: '💊', when: 'daily' }];
+  assert.equal(L.suppWeek(d, '2026-10-06')[6].state, 'none');
+  d.supps = [];
+  assert.equal(L.suppList(d).length, 0); // quitar todo se respeta
+});
