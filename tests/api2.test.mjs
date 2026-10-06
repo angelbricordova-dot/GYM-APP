@@ -61,6 +61,11 @@ test('Google: poner un PIN y vincular otra cuenta (sin robar la de la pareja)', 
   assert.equal((await call('POST', '/auth/google/link', { token: A.token, body: { credential: idToken({ sub: 'g-nueva', email: 'n@x.com' }) } })).status, 200);
   const acc = (await call('GET', '/sync', { token: A.token })).data.account;
   assert.deepEqual([acc.google, acc.email, acc.hasPin], [true, 'n@x.com', true]);
+  // entrar con PIN + Google en un paso vincula esa cuenta de Google (y no vale con un PIN malo ni robando la de la pareja)
+  assert.equal((await call('POST', '/login', { body: { name: 'Ángel', pin: '9999', credential: idToken({ sub: 'g-otra' }) } })).status, 401);
+  assert.equal((await call('POST', '/login', { body: { name: 'Ángel', pin: '1234', credential: idToken({ sub: 'g-ange' }) } })).status, 409);
+  assert.equal((await call('POST', '/login', { body: { name: 'Ángel', pin: '1234', credential: idToken({ sub: 'g-otra', email: 'o@x.com' }) } })).status, 200);
+  assert.equal((await call('POST', '/auth/google', { body: { credential: idToken({ sub: 'g-otra' }), mode: 'login' } })).status, 200);
 });
 
 test('retos: poner, iniciar, enviar evidencia, aprobar o rechazar', async () => {

@@ -225,6 +225,14 @@ async function login(body) {
     return fail(401, 'Nombre o PIN incorrecto.');
   }
   user.fails = 0;
+  // Entrar con PIN + una cuenta de Google en el mismo paso la vincula (se prueba que eres tú con las dos cosas).
+  if (body.credential) {
+    const g = await verifyGoogle(body.credential);
+    const taken = (await allUsers()).find((u) => u.googleSub === g.sub && u.id !== user.id);
+    if (taken) return fail(409, 'Esa cuenta de Google ya está vinculada a otra persona.');
+    user.googleSub = g.sub;
+    user.email = g.email;
+  }
   await db.set(`user/${user.id}`, user);
   return json(200, { token: await sign(user.id), uid: user.id });
 }

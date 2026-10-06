@@ -17,6 +17,7 @@ export function Auth() {
   const [inviter, setInviter] = useState('');
   const [pending, setPending] = useState(null); // { kind: 'pin' } | { kind: 'google', credential }
   const [phrase, setPhrase] = useState('');
+  const [link, setLink] = useState(null); // credencial de Google por vincular al entrar con PIN
 
   useEffect(() => {
     S.getStatus().then((r) => (r.ok ? setInfo(r.data) : setInfo({ offline: true })));
@@ -54,14 +55,20 @@ export function Auth() {
     setBusy(true); setError('');
     done(mode === 'setup'
       ? await S.createSpace({ name: f.name, pin: f.pin, setupCode: f.setupCode })
-      : await S.login({ name: f.name, pin: f.pin }));
+      : await S.login({ name: f.name, pin: f.pin, credential: link || undefined }));
   };
 
   const withGoogle = async (credential) => {
     setError('');
     if (mode === 'join') return f.code.trim() ? toPact(credential) : setError('Escribe primero el código de invitación.');
     setBusy(true);
-    done(mode === 'setup' ? await S.googleSetup({ credential, name: f.name, setupCode: f.setupCode }) : await S.googleLogin(credential));
+    if (mode === 'setup') return done(await S.googleSetup({ credential, name: f.name, setupCode: f.setupCode }));
+    const res = await S.googleLogin(credential);
+    if (res.status === 404) { // Google válido pero sin vincular: se pide nombre y PIN una vez para vincularlo
+      setBusy(false); setLink(credential); setMode('login');
+      return setError('Ese Google todavía no está vinculado. Escribe tu nombre y PIN y toca Entrar: lo vinculo y la próxima vez entras solo con Google.');
+    }
+    done(res);
   };
 
   const accept = async () => {
@@ -139,7 +146,7 @@ export function Auth() {
   const google = info?.googleClientId;
   const gText = mode === 'login' ? 'signin_with' : 'continue_with';
   return html`<${Shell}>
-    <button class="back" onClick=${() => { setMode('welcome'); setError(''); }}><${Icon} name="left" size=${20} /> Atrás</button>
+    <button class="back" onClick=${() => { setMode('welcome'); setError(''); setLink(null); }}><${Icon} name="left" size=${20} /> Atrás</button>
     <h1>${titles[mode]}</h1>
     ${mode === 'join' && inviter && html`<div class="invited"><span>💌</span><div><b>${inviter} te invitó a Lindwyrm</b><small>Crea tu perfil para continuar</small></div></div>`}
     ${mode === 'join' && html`<${Field} label="Código de invitación"><input value=${f.code} onInput=${set('code')} maxlength="12" autocapitalize="characters" autocomplete="off" class="code-input" /><//>`}

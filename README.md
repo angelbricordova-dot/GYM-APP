@@ -66,7 +66,7 @@ Solo se necesita el **ID de cliente** (no hay “secreto”). Paso a paso:
 5. En **Orígenes autorizados de JavaScript** agrega la URL exacta de tu sitio de Netlify, sin barra final (por ejemplo `https://lindwyrm.netlify.app`). Si luego usan un dominio propio, agrégalo también. Para pruebas locales: `http://localhost:8888`. No hace falta “URI de redireccionamiento”.
 6. Copia el **ID de cliente** (termina en `.apps.googleusercontent.com`).
 7. En Netlify → *Site configuration → Environment variables* crea `GOOGLE_CLIENT_ID` con ese valor y **vuelve a desplegar** (*Deploys → Trigger deploy*).
-8. Listo: aparece **Continuar con Google** al crear/unirse/entrar. Quien ya tiene cuenta con PIN la vincula en *Perfil → Cuenta*.
+8. Listo: aparece **Continuar con Google** al crear/unirse/entrar. Quien ya tiene cuenta con PIN la vincula en *Perfil → Cuenta* o, más fácil, toca *Acceder con Google* en la pantalla de entrar: si aún no está vinculado, pide nombre y PIN una vez y lo vincula.
 
 > ⚠️ Google en una app instalada en la pantalla de inicio del iPhone puede abrir su ventana de forma distinta a Safari. Pruébalo en el teléfono real;
 > por eso siempre puedes crear un **PIN** en el perfil como respaldo.
