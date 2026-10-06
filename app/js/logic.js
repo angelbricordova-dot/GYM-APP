@@ -28,14 +28,27 @@ export const num = (v) => {
 };
 
 // ---------- constantes de juego ----------
-export const EARN = { checkin: 10, water: 5, pr: 5, week: 20 };
+export const EARN = { checkin: 10, pr: 5, week: 20 };
 export const MILESTONES = { 3: 10, 7: 25, 14: 40, 30: 100, 60: 150, 100: 250 };
-export const ACCENTS = ['#8b7cff', '#ff5c93', '#38bdf8', '#2dd4a7', '#ff8a4c', '#b6f23a'];
+// 24 colores para el acento personal (el selector también admite un color libre).
+export const PALETTE = [
+  '#FF453A', '#FF6B35', '#FF9F0A', '#FFD60A', '#B6F23A', '#30D158',
+  '#34D6A0', '#2EC4B6', '#64D2FF', '#0A84FF', '#5E5CE6', '#8B7CFF',
+  '#BF5AF2', '#FF5C93', '#FF375F', '#FF8A9B', '#C9A0FF', '#A8E6CF',
+  '#E6B422', '#D4A373', '#8E8E93', '#6E7BFF', '#00C2A8', '#F472B6',
+];
 
-export function newDoc(id, name, color = ACCENTS[0]) {
+// ---------- color ----------
+const rgb = (hex) => { const n = parseInt(hex.replace('#', '').padEnd(6, '0').slice(0, 6), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+export const luminance = (hex) => { const [r, g, b] = rgb(hex).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+export const contrast = (a, b) => { const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
+/** Texto sobre un color de acento. Los botones usan texto en negrita ≥17 pt (WCAG pide 3:1), así que se prefiere blanco y solo se pasa a casi negro cuando el blanco no llega a 3.5:1. */
+export const onColor = (hex) => (contrast(hex, '#ffffff') >= 3.5 ? '#ffffff' : '#111114');
+
+export function newDoc(id, name, color = PALETTE[6]) {
   return {
-    v: 2, id, name, color, avatar: null, heightCm: null, weeklyGoal: 3, waterGoalMl: 2000, restDays: 2, shareWeight: false,
-    weights: [], sessions: [], water: {}, checkins: {}, pauses: [], ledger: [], routines: [],
+    v: 2, id, name, color, avatar: null, heightCm: null, weeklyGoal: 3, restDays: 2, shareWeight: false,
+    weights: [], sessions: [], checkins: {}, pauses: [], ledger: [], routines: [],
     createdAt: Date.now(), updatedAt: Date.now(),
   };
 }
@@ -236,7 +249,7 @@ export function findPRs(doc, session) {
  * Los tokens "automáticos" se derivan de los datos y se reconcilian aquí: borrar un entreno o bajar el agua
  * revierte su premio y nunca se cobra dos veces. Los canjes (entradas con `ref`) son manuales y no se tocan.
  */
-export function recomputeAwards(doc) {
+export function recomputeAwards(doc, extra = {}) {
   const want = new Map();
   const put = (key, delta, reason, date) => want.set(key, { key, delta, reason, date });
 
@@ -261,8 +274,8 @@ export function recomputeAwards(doc) {
   for (const [week, count] of Object.entries(weekCounts(doc))) {
     if (count >= doc.weeklyGoal) put(`week:${week}`, EARN.week, `Meta semanal (${count}/${doc.weeklyGoal})`, addDays(week, 6));
   }
-  for (const [d, ml] of Object.entries(doc.water)) {
-    if (ml >= doc.waterGoalMl) put(`water:${d}`, EARN.water, `Meta de agua (${doc.waterGoalMl / 1000} L)`, d);
+  for (const c of extra.challenges || []) {
+    if (c.status === 'approved' && c.to === doc.id) put(`challenge:${c.id}`, c.points, `Reto cumplido: ${c.title}`, ymd(new Date(c.approvedAt || c.ts)));
   }
 
   const kept = doc.ledger.filter((e) => !e.key || want.has(e.key));
@@ -284,4 +297,92 @@ export const LIBRARY = [
   ['Brazo', ['Curl con barra', 'Curl martillo', 'Press francés', 'Extensión en polea', 'Fondos en banco']],
   ['Core', ['Plancha', 'Crunch', 'Elevación de piernas', 'Rueda abdominal']],
   ['Cardio', ['Caminadora', 'Elíptica', 'Bicicleta', 'Escaladora']],
+];
+
+// ---------- análisis mensual ----------
+const monthPrefix = (y, m) => `${y}-${pad(m + 1)}`;
+const daysIn = (y, m) => new Date(y, m + 1, 0).getDate();
+
+export function monthAttended(doc, y, m) { return Object.keys(doc.checkins).filter((d) => d.startsWith(monthPrefix(y, m))).length; }
+
+/** Cuántos días fuiste, cuántos “debías” según tu meta semanal, y cómo va cada semana. */
+export function monthReport(doc, y, m, today = ymd()) {
+  const pre = monthPrefix(y, m);
+  const first = `${pre}-01`;
+  const end = `${pre}-${pad(daysIn(y, m))}`;
+  const last = today < end ? today : end;
+  if (today < first) return null; // mes futuro
+  // Solo se “debe” lo que pasó desde que empezaste a usar la app (no se te culpa por días anteriores).
+  const created = ymd(new Date(doc.createdAt || 0));
+  const start = created > first ? created : first;
+  const elapsed = start > last ? 0 : diffDays(start, last) + 1;
+  const paused = elapsed ? pausedBetween(doc, addDays(start, -1), last) : 0;
+  const active = Math.max(0, elapsed - paused);
+  const days = Object.keys(doc.checkins).filter((d) => d.startsWith(pre) && d <= last).sort();
+  const attended = days.length;
+  const expected = Math.min(active, Math.round((doc.weeklyGoal * active) / 7));
+  const missed = Math.max(0, expected - attended);
+
+  const weeks = [];
+  for (let w = mondayOf(start); w <= last; w = addDays(w, 7)) {
+    const inMonth = Array.from({ length: 7 }, (_, i) => addDays(w, i)).filter((d) => d >= start && d <= end);
+    if (!inMonth.length) continue;
+    const count = inMonth.filter((d) => d <= today && doc.checkins[d]).length;
+    const goal = Math.max(1, Math.ceil((doc.weeklyGoal * inMonth.length) / 7));
+    weeks.push({ start: inMonth[0], count, goal, hit: count >= goal, current: inMonth.includes(today), days: inMonth.length });
+  }
+
+  const info = streakInfo(doc, last);
+  const bestChain = Math.max(0, ...info.chains.map((c) => c.filter((d) => d.startsWith(pre)).length));
+  const sessions = doc.sessions.filter((s) => s.date.startsWith(pre) && s.date <= last);
+  const pm = m === 0 ? [y - 1, 11] : [y, m - 1];
+  const prevEnd = `${monthPrefix(pm[0], pm[1])}-${pad(daysIn(pm[0], pm[1]))}`;
+  const perDay = new Array(7).fill(0);
+  const mins = [];
+  for (const d of days) {
+    perDay[weekdayIdx(d)]++;
+    const [h, mm] = (doc.checkins[d].time || '').split(':').map(Number);
+    if (Number.isFinite(h)) mins.push(h * 60 + (mm || 0));
+  }
+  const top = Math.max(...perDay);
+  const avg = mins.length ? Math.round(mins.reduce((a, b) => a + b, 0) / mins.length) : null;
+  return {
+    attended, expected, missed, elapsed, paused,
+    pct: expected ? Math.min(100, Math.round((attended / expected) * 100)) : attended ? 100 : 0,
+    weeks, weeksHit: weeks.filter((w) => w.hit).length,
+    bestChain,
+    prev: created > prevEnd ? null : monthAttended(doc, pm[0], pm[1]), // null = aún no usabas la app ese mes
+    sessions: sessions.length,
+    sets: sessions.reduce((a, s) => a + sessionSets(s), 0),
+    volume: sessions.reduce((a, s) => a + sessionVolume(s), 0),
+    prs: doc.ledger.filter((e) => e.key?.startsWith('pr:') && e.date.startsWith(pre)).length,
+    topDays: top ? perDay.flatMap((c, i) => (c === top ? [DAY_NAMES[i]] : [])) : [],
+    avgTime: avg == null ? null : `${pad(Math.floor(avg / 60))}:${pad(avg % 60)}`,
+    perDay,
+  };
+}
+
+/** Días de gym por mes (los últimos `n`), para ver la tendencia con el paso de los meses. */
+export function monthlyCounts(doc, n = 6, today = ymd()) {
+  const t = parseYmd(today);
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(t.getFullYear(), t.getMonth() - (n - 1 - i), 1);
+    return { y: d.getFullYear(), m: d.getMonth(), label: d.toLocaleDateString('es-MX', { month: 'short' }).replace('.', ''), count: monthAttended(doc, d.getFullYear(), d.getMonth()) };
+  });
+}
+
+// ---------- plantillas para empezar rápido ----------
+export const TEMPLATES = [
+  { id: 'push', name: 'Empuje', sub: 'Pecho · hombro · tríceps', exercises: ['Press banca', 'Press inclinado con mancuernas', 'Press militar', 'Elevaciones laterales', 'Extensión en polea'] },
+  { id: 'pull', name: 'Tirón', sub: 'Espalda · bíceps', exercises: ['Jalón al pecho', 'Remo con barra', 'Remo en polea', 'Face pull', 'Curl con barra'] },
+  { id: 'legs', name: 'Pierna', sub: 'Cuádriceps · glúteo · femoral', exercises: ['Sentadilla', 'Prensa', 'Peso muerto rumano', 'Hip thrust', 'Curl femoral', 'Elevación de talones'] },
+  { id: 'full', name: 'Cuerpo completo', sub: 'Todo en una sesión', exercises: ['Sentadilla', 'Press banca', 'Remo con mancuerna', 'Press militar', 'Plancha'] },
+];
+
+// ---------- tablero de motivación ----------
+export const PHRASES = [
+  'Orgullo total de verte constante 💗', 'Un día más, una versión más fuerte de ti 💪', 'Hoy lo vas a lograr, lo sé',
+  'Tu esfuerzo de hoy es tu orgullo de mañana ✨', 'No tiene que ser perfecto, solo tiene que ser hoy',
+  'Mírate: cada día más fuerte 🔥', 'Cuando no tengas ganas, acuérdate de por qué empezaste', 'Eres mi persona favorita para entrenar 💞',
+  'Un set más y ya estás ahí', 'Qué bonito verte cuidarte así', 'Aunque estés cansado, sigues viniendo. Eso es disciplina', 'Te mando toda mi energía para tu entreno ⚡',
 ];

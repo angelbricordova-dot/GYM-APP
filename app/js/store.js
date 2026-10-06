@@ -9,7 +9,8 @@ const fresh = () => ({
   auth: null, // { token, uid }
   me: null,
   partner: null, // { id, name, doc, updatedAt }
-  proposals: [], vouchers: [], messages: [],
+  proposals: [], vouchers: [], messages: [], challenges: [],
+  account: null, // { google, email, hasPin }
   invite: null,
   seenAt: 0,
   draft: null, // entreno en curso (no se sincroniza)
@@ -40,8 +41,9 @@ const emit = () => { version++; subs.forEach((fn) => fn()); };
 const commit = () => { save(); emit(); };
 
 // ---------- red ----------
-async function call(method, path, body, { raw } = {}) {
+async function call(method, path, body, { raw, type } = {}) {
   const headers = {};
+  if (type) headers['content-type'] = type;
   if (state.auth) headers.authorization = `Bearer ${state.auth.token}`;
   if (body !== undefined && !raw) headers['content-type'] = 'application/json';
   try {
@@ -129,7 +131,9 @@ export async function syncNow() {
       if (d.me && !state.dirty) { state.me = d.me; state.meSyncedAt = d.me.updatedAt; }
       if (d.partner) state.partner = { id: d.partner.id, name: d.partner.name, updatedAt: d.partner.updatedAt, doc: d.partner.doc || state.partner?.doc || null };
       state.invite = d.inviteCode;
-      state.proposals = d.proposals; state.vouchers = d.vouchers; state.messages = d.messages;
+      state.proposals = d.proposals; state.vouchers = d.vouchers; state.messages = d.messages; state.challenges = d.challenges || [];
+      state.account = d.account || null;
+      reconcilePoints();
       net.error = null;
       net.lastSync = Date.now();
     } else if (res.status) net.error = res.data.error;
@@ -150,10 +154,21 @@ export function startSyncLoop() {
 }
 
 // ---------- mutaciones de mi documento ----------
+const approvedForMe = () => state.challenges.filter((c) => c.status === 'approved' && c.to === state.me?.id);
+
+/** Los retos aprobados por mi pareja se convierten en puntos de amor en MI documento (cada quien escribe solo el suyo). */
+function reconcilePoints() {
+  if (!state.me) return;
+  const sig = () => state.me.ledger.map((e) => e.id).join();
+  const before = sig();
+  L.recomputeAwards(state.me, { challenges: approvedForMe() });
+  if (sig() !== before) { state.me.updatedAt = Math.max(Date.now(), state.me.updatedAt + 1); state.dirty = true; }
+}
+
 export function update(fn) {
   if (!state.me) return;
   fn(state.me);
-  L.recomputeAwards(state.me);
+  L.recomputeAwards(state.me, { challenges: approvedForMe() });
   state.me.updatedAt = Math.max(Date.now(), state.me.updatedAt + 1);
   state.dirty = true;
   commit();
@@ -161,7 +176,6 @@ export function update(fn) {
 }
 
 export const profile = (patch) => update((me) => Object.assign(me, patch));
-export const addWater = (ml, date = L.ymd()) => update((me) => { me.water[date] = Math.max(0, (me.water[date] || 0) + ml); });
 
 export function logWeight(kg, date = L.ymd()) {
   if (!L.num(kg)) return;
@@ -215,9 +229,46 @@ export const propose = (p) => act('POST', '/proposals', p);
 export const decide = (id, action, cost) => act('POST', `/proposals/${id}`, { action, cost });
 export const markVoucherDone = (id) => act('POST', `/vouchers/${id}/done`);
 export const sendMessage = (text, kind = 'text', ref = null) => act('POST', '/messages', { text, kind, ref });
+export const likeMessage = (id) => act('POST', `/messages/${id}/like`);
+export const deleteMessage = (id) => act('POST', `/messages/${id}/delete`);
+
+// ---------- retos ----------
+export const createChallenge = (c) => act('POST', '/challenges', c);
+export const startChallenge = (id) => act('POST', `/challenges/${id}/start`);
+export const reviewChallenge = (id, action, note = '') => act('POST', `/challenges/${id}/review`, { action, note });
+export const cancelChallenge = (id) => act('POST', `/challenges/${id}/cancel`);
+
+/** Sube la evidencia (video o foto). Exige conexión: devuelve el error para que la pantalla permita reintentar. */
+export async function submitEvidence(id, blob) {
+  const res = await call('POST', `/challenges/${id}/evidence`, undefined, { raw: blob, type: blob.type.split(';')[0] });
+  if (res.ok) await syncNow();
+  return res;
+}
+
+const evidenceUrls = new Map();
+export function loadEvidence(c) {
+  const k = `${c.id}:${c.evidence?.ts}`;
+  if (!evidenceUrls.has(k)) evidenceUrls.set(k, download(`/challenges/${c.id}/evidence`).then((b) => (b ? URL.createObjectURL(b) : null)));
+  return evidenceUrls.get(k);
+}
+
+const uid = () => state.auth?.uid;
+/** Retos que me pusieron y siguen pendientes de hacer. */
+export const challengesForMe = () => state.challenges.filter((c) => c.to === uid() && ['open', 'started', 'rejected'].includes(c.status));
+/** Retos que cumplí y esperan la aprobación de mi pareja (se muestran, pero no requieren acción mía). */
+export const challengesWaiting = () => state.challenges.filter((c) => c.to === uid() && c.status === 'submitted');
+/** Retos que yo puse y tienen evidencia esperando mi revisión. */
+export const challengesToReview = () => state.challenges.filter((c) => c.from === uid() && c.status === 'submitted');
+
+// ---------- Google ----------
+export const googleLogin = async (credential) => startSession(await call('POST', '/auth/google', { credential, mode: 'login' }));
+export const googleSetup = (body) => call('POST', '/auth/google', { ...body, mode: 'setup' });
+export const googleJoin = async (body) => startSession(await call('POST', '/auth/google', { ...body, mode: 'join' }));
+export async function linkGoogle(credential) { const r = await call('POST', '/auth/google/link', { credential }); if (r.ok) await syncNow(); return r; }
+export async function setPin(pin) { const r = await call('POST', '/auth/pin', { pin }); if (r.ok) await syncNow(); return r; }
 
 export async function redeem(proposal) {
-  if (L.balance(state.me) < proposal.cost) return { ok: false, data: { error: 'Aún no te alcanzan los tokens.' } };
+  if (L.balance(state.me) < proposal.cost) return { ok: false, data: { error: 'Aún no te alcanzan los puntos de amor.' } };
   const res = await call('POST', '/vouchers', { proposalId: proposal.id });
   if (!res.ok) return res;
   update((me) => me.ledger.push({ id: L.uid(), ts: Date.now(), date: L.ymd(), delta: -proposal.cost, reason: `Canje: ${proposal.emoji} ${proposal.name}`, ref: res.data.voucher.id }));

@@ -1,7 +1,7 @@
 import { html, useState } from '../../vendor/preact-htm.js';
 import * as S from '../store.js';
 import * as L from '../logic.js';
-import { Icon, Sheet, Segmented, Stepper, Field, CountUp, Empty, Confetti, toast, cx, fmtDay } from './kit.js';
+import { Icon, Heart, Points, Sheet, Segmented, Stepper, Field, CountUp, Empty, Confetti, toast, cx, fmtDay } from './kit.js';
 
 const IDEAS = [
   ['🎬', 'Ver una película juntos', 50], ['🍦', 'Salir por un helado', 40], ['🍕', 'Noche de pizza', 120],
@@ -21,11 +21,11 @@ export function Rewards() {
   const from = Math.max(0, ...active.filter((p) => p.cost <= bal).map((p) => p.cost));
 
   return html`<div class="view-in">
-    <header class="top"><div><small class="muted">Sus hábitos valen la pena</small><h1>Premios</h1></div></header>
+    <header class="top large"><div><small class="muted">Sus hábitos valen la pena</small><h1>Puntos de amor</h1></div></header>
 
     <section class="card coin-hero rise">
-      <div class="coin">🪙</div>
-      <div class="coin-n"><b><${CountUp} value=${bal} /></b><small>tokens</small></div>
+      <div class="coin"><${Heart} size=${44} /></div>
+      <div class="coin-n"><b><${CountUp} value=${bal} /></b><small>puntos de amor</small></div>
       ${next ? html`<div class="next"><div class="meter gold"><i style=${`width:${Math.min(100, ((bal - from) / (next.cost - from)) * 100)}%`}></i></div><small class="muted">Faltan ${next.cost - bal} para ${next.emoji} ${next.name}</small></div>` : html`<small class="muted">${active.length ? '¡Ya te alcanza para todo! Elige uno 🎉' : 'Propongan su primer premio en “Ideas”.'}</small>`}
     </section>
 
@@ -43,7 +43,7 @@ function Prizes({ active, bal, me, partner, onIdeas }) {
   const [celebrate, setCelebrate] = useState(false);
   const open = S.state.vouchers.filter((v) => v.status === 'open');
   const redeem = async (p) => {
-    if (!confirm(`¿Canjear “${p.name}” por ${p.cost} tokens?`)) return;
+    if (!confirm(`¿Canjear “${p.name}” por ${p.cost} puntos de amor?`)) return;
     const r = await S.redeem(p);
     if (r.ok) { setCelebrate(true); setTimeout(() => setCelebrate(false), 1800); toast(`${p.emoji} ¡A disfrutarlo!`); }
     else toast(r.data.error, { icon: '⚠️' });
@@ -55,18 +55,18 @@ function Prizes({ active, bal, me, partner, onIdeas }) {
       <h2>Canjear</h2>
       ${active.length ? active.map((p) => html`<div class="reward">
         <span class="emoji">${p.emoji}</span>
-        <div class="grow"><b>${p.name}</b><small class="muted">🪙 ${p.cost}${p.note ? ` · ${p.note}` : ''}</small></div>
+        <div class="grow"><b>${p.name}</b><small class="muted"><${Points} n=${p.cost} size=${13} />${p.note ? ` · ${p.note}` : ''}</small></div>
         <button class=${cx('btn sm', bal >= p.cost && 'primary')} disabled=${bal < p.cost} onClick=${() => redeem(p)}>${bal >= p.cost ? 'Canjear' : `Faltan ${p.cost - bal}`}</button>
       </div>`) : html`<${Empty} icon="🎁" title="Aún no hay premios" text="Un premio existe cuando uno lo propone y el otro lo acepta." action=${html`<button class="btn primary" onClick=${onIdeas}>Ir a Ideas</button>`} />`}
     </section>
     <section class="card rise" style="--i:2">
-      <h2>Cómo ganar tokens</h2>
+      <h2>Cómo ganar puntos de amor</h2>
       <ul class="earn">
         <li><span>📸 Entrenar y tomar la foto de salida</span><b>+${L.EARN.checkin}</b></li>
-        <li><span>💧 Meta de agua del día</span><b>+${L.EARN.water}</b></li>
         <li><span>🏆 Récord en un ejercicio</span><b>+${L.EARN.pr}</b></li>
         <li><span>📆 Cumplir tu meta semanal</span><b>+${L.EARN.week}</b></li>
         <li><span>🔥 Hitos de racha (3, 7, 14, 30…)</span><b>+10 a +250</b></li>
+        <li><span>🎯 Retos que tu pareja te aprueba</span><b>los que pongan</b></li>
       </ul>
     </section>
   </div>`;
@@ -90,12 +90,12 @@ function Ideas({ me, partner, onPropose }) {
     <button class="btn primary block lg" onClick=${onPropose}><${Icon} name="plus" size=${20} /> Proponer un premio</button>
     ${!partner && html`<p class="notice">Tu pareja aún no se une: podrán decidir juntos cuando entre.</p>`}
     ${toMe.length > 0 && html`<section class="card rise attn"><h2>Esperan tu respuesta</h2>${toMe.map((p) => html`<div class="idea">
-      <div class="idea-top"><span class="emoji">${p.emoji}</span><div class="grow"><b>${p.name}</b><small class="muted">${who(p.lastBy, partner)} ${p.history.length > 1 ? 'contraofertó' : 'propone'} · 🪙 ${p.cost}</small>${p.note && html`<small class="muted">“${p.note}”</small>`}</div></div>
+      <div class="idea-top"><span class="emoji">${p.emoji}</span><div class="grow"><b>${p.name}</b><small class="muted">${who(p.lastBy, partner)} ${p.history.length > 1 ? 'contraofertó' : 'propone'} · <${Points} n=${p.cost} size=${13} /></small>${p.note && html`<small class="muted">“${p.note}”</small>`}</div></div>
       <div class="idea-actions"><button class="btn sm primary" onClick=${() => decide(p, 'accept')}>Aceptar</button><button class="btn sm" onClick=${() => setCounter(p)}>Contraoferta</button><button class="btn sm ghost" onClick=${() => decide(p, 'decline')}>Rechazar</button></div>
     </div>`)}</section>`}
-    ${mine.length > 0 && html`<section class="card rise" style="--i:1"><h2>Esperando respuesta</h2>${mine.map((p) => html`<div class="reward"><span class="emoji">${p.emoji}</span><div class="grow"><b>${p.name}</b><small class="muted">🪙 ${p.cost} · ${partner ? `a ${partner.name} le toca decidir` : 'pendiente'}</small></div><span class="chip">⏳</span></div>`)}</section>`}
+    ${mine.length > 0 && html`<section class="card rise" style="--i:1"><h2>Esperando respuesta</h2>${mine.map((p) => html`<div class="reward"><span class="emoji">${p.emoji}</span><div class="grow"><b>${p.name}</b><small class="muted"><${Points} n=${p.cost} size=${13} /> · ${partner ? `a ${partner.name} le toca decidir` : 'pendiente'}</small></div><span class="chip">⏳</span></div>`)}</section>`}
     ${toMe.length + mine.length === 0 && html`<${Empty} icon="💡" title="Sin ideas pendientes" text="Propón una salida, una cena, un día de spa… y que el otro lo apruebe o la ajuste." />`}
-    ${declined.length > 0 && html`<details class="card"><summary>Rechazadas (${declined.length})</summary>${declined.map((p) => html`<div class="reward dim"><span class="emoji">${p.emoji}</span><div class="grow"><b>${p.name}</b><small class="muted">🪙 ${p.cost}</small></div></div>`)}</details>`}
+    ${declined.length > 0 && html`<details class="card"><summary>Rechazadas (${declined.length})</summary>${declined.map((p) => html`<div class="reward dim"><span class="emoji">${p.emoji}</span><div class="grow"><b>${p.name}</b><small class="muted"><${Points} n=${p.cost} size=${13} /></small></div></div>`)}</details>`}
     ${counter && html`<${CounterSheet} p=${counter} onClose=${() => setCounter(null)} onSend=${(c) => { decide(counter, 'counter', c); setCounter(null); }} />`}
   </div>`;
 }
@@ -114,7 +114,7 @@ function ProposeSheet({ onClose }) {
     <div class="idea-chips">${IDEAS.map(([e, n, c]) => html`<button class=${cx('chip pick', f.name === n && 'on')} onClick=${() => setF({ ...f, emoji: e, name: n, cost: String(c) })}>${e} ${n}</button>`)}</div>
     <form class="stack" onSubmit=${send}>
       <div class="row-emoji"><${Field} label="Emoji"><input value=${f.emoji} onInput=${(e) => setF({ ...f, emoji: e.target.value })} maxlength="4" class="emoji-in" /><//><${Field} label="¿Qué proponen?"><input value=${f.name} onInput=${(e) => setF({ ...f, name: e.target.value })} maxlength="60" required placeholder="Ej. Ver una película juntos" /><//></div>
-      <${Field} label="Costo en tokens"><${Stepper} value=${f.cost} onChange=${(v) => setF({ ...f, cost: v })} step=${10} min=${1} label="Costo" /><//>
+      <${Field} label="Costo en puntos de amor"><${Stepper} value=${f.cost} onChange=${(v) => setF({ ...f, cost: v })} step=${10} min=${1} label="Costo" /><//>
       <${Field} label="Nota (opcional)"><input value=${f.note} onInput=${(e) => setF({ ...f, note: e.target.value })} maxlength="140" placeholder="Detalles…" /><//>
       <button class="btn primary block lg" disabled=${busy || !f.name.trim()}>${busy ? 'Enviando…' : 'Enviar propuesta'}</button>
     </form>
@@ -124,7 +124,7 @@ function ProposeSheet({ onClose }) {
 function CounterSheet({ p, onClose, onSend }) {
   const [cost, setCost] = useState(String(p.cost));
   return html`<${Sheet} title="Contraoferta" onClose=${onClose}>
-    <p class="muted"><b>${p.emoji} ${p.name}</b> cuesta ${p.cost} 🪙. ¿Cuánto crees que debería costar?</p>
+    <p class="muted"><b>${p.emoji} ${p.name}</b> cuesta ${p.cost} puntos de amor. ¿Cuánto crees que debería costar?</p>
     <${Stepper} value=${cost} onChange=${setCost} step=${10} min=${1} label="Costo" />
     <button class="btn primary block lg" onClick=${() => onSend(L.num(cost))}>Enviar contraoferta</button>
   <//>`;

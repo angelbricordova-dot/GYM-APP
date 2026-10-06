@@ -3,17 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-  <title>Gym Duo</title>
-  <meta name="description" content="Entrenen, tomen agua y sigan su racha juntos.">
-  <meta name="theme-color" content="#07080c">
+  <title>Lindwyrm</title>
+  <meta name="description" content="Entrenen, sigan su racha y ganen puntos de amor juntos.">
+  <meta name="theme-color" content="#08080d">
   <meta name="color-scheme" content="dark">
+  <script>
+    // Aplica el tema antes de pintar para que no haya parpadeo.
+    try {
+      var t = localStorage.getItem("lindwyrm.theme") || "auto";
+      document.documentElement.dataset.theme = t === "auto" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : t;
+    } catch (e) { document.documentElement.dataset.theme = "dark"; }
+  </script>
 
   <!-- Instalable como app (Android/Chrome) -->
   <link rel="manifest" href="/manifest.webmanifest">
   <!-- Instalable como app (iPhone: Compartir → Agregar a pantalla de inicio) -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Gym Duo">
+  <meta name="apple-mobile-web-app-title" content="Lindwyrm">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
   <link rel="icon" type="image/png" href="/icons/icon-192.png">

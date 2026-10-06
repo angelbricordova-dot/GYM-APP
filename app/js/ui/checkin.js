@@ -77,7 +77,7 @@ function Celebration({ done, onClose }) {
     <h1>${done.streak === 1 ? 'racha iniciada' : 'días de racha'}</h1>
     <p class="muted center">${done.newBest ? '🏆 ¡Nueva mejor racha!' : done.streak > done.before.streak ? '¡Un día más, sigue así!' : 'Foto actualizada'}${partner ? ` · ${partner} lo verá` : ''}</p>
     <div class="cel-chips">
-      ${gain > 0 && html`<span class="chip gold">+${gain} 🪙</span>`}
+      ${gain > 0 && html`<span class="chip gold">+${gain} puntos de amor</span>`}
       ${milestone && html`<span class="chip ember">Hito de ${done.streak} días</span>`}
     </div>
     <button class="btn primary block lg cel-btn" onClick=${onClose}>Listo</button>

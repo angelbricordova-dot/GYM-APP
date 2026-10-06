@@ -1,8 +1,8 @@
 {
-  "name": "gym-duo",
+  "name": "lindwyrm",
   "private": true,
   "type": "module",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "scripts": {
     "dev": "node tools/dev-server.mjs",
     "test": "node --test tests/*.test.mjs",

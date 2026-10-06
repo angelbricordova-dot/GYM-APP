@@ -38,4 +38,4 @@ const server = createServer(async (req, res) => {
 });
 
 const port = process.env.PORT || 8888;
-server.listen(port, () => console.log(`Gym Duo en http://localhost:${port}`));
+server.listen(port, () => console.log(`Lindwyrm en http://localhost:${port}`));

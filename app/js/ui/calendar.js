@@ -4,9 +4,11 @@ import * as L from '../logic.js';
 import { Icon, Flame, Photo, Sheet, fmtLong, cx, toast, fmtKg } from './kit.js';
 
 /** Calendario mensual de check-ins. Sirve para mi perfil y, en solo lectura, para el de mi pareja. */
-export function Calendar({ doc, onDay }) {
+export function Calendar({ doc, onDay, month, onMonth, hideHead }) {
   const now = new Date();
-  const [m, setM] = useState({ y: now.getFullYear(), m: now.getMonth(), dir: 0 });
+  const [own, setOwn] = useState({ y: now.getFullYear(), m: now.getMonth(), dir: 0 });
+  const m = month ? { ...month, dir: month.dir || 0 } : own; // controlado desde Progreso o con estado propio
+  const setM = (v) => (month ? onMonth(v) : setOwn(v));
   const today = L.ymd();
   const info = L.streakInfo(doc);
   const inChain = new Set(info.chain);
@@ -17,11 +19,11 @@ export function Calendar({ doc, onDay }) {
   const isCurrent = m.y === now.getFullYear() && m.m === now.getMonth();
 
   return html`<div class="cal">
-    <div class="cal-head">
+    ${!hideHead && html`<div class="cal-head">
       <button class="icon-btn" onClick=${() => shift(-1)} aria-label="Mes anterior"><${Icon} name="left" size=${18} /></button>
       <b>${title}</b>
       <button class="icon-btn" onClick=${() => shift(1)} disabled=${isCurrent} aria-label="Mes siguiente"><${Icon} name="right" size=${18} /></button>
-    </div>
+    </div>`}
     <div class="cal-dow">${L.DAY_INITIALS.map((d) => html`<span>${d}</span>`)}</div>
     <div class=${cx('cal-grid', m.dir > 0 && 'from-r', m.dir < 0 && 'from-l')} key=${`${m.y}-${m.m}`}>
       ${weeks.flat().map((c) => {

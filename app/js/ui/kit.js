@@ -42,9 +42,26 @@ const PATHS = {
   list: 'M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01',
   copy: 'M9 9h11v11H9zM5 15V4h11',
   pencil: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4',
+  target: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 16.5a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9zM12 12h.01',
+  play: 'M8 5.5v13l10.5-6.5z',
+  video: 'M3 7h11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H3zM16 11.5l5-3v7l-5-3',
+  sun: 'M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4',
+  note: 'M5 4h14v11l-5 5H5zM14 20v-5h5',
+  stop: 'M7 7h10v10H7z',
+  star: 'M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z',
+  sparkle: 'M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18',
+  info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8h.01',
+  chevD: 'M5 9l7 7 7-7',
+  history: 'M3 12a9 9 0 1 0 3-6.7M3 4v5h5M12 8v4l3 2',
 };
 
-export const Icon = ({ name, size = 22, sw = 1.8, class: c }) => html`<svg class=${cx('icon', c)} width=${size} height=${size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width=${sw} stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d=${PATHS[name]} /></svg>`;
+export const Icon = ({ name, size = 22, sw = 1.8, fill, class: c }) => html`<svg class=${cx('icon', c)} width=${size} height=${size} viewBox="0 0 24 24" fill=${fill ? 'currentColor' : 'none'} fill-opacity=${fill === true ? 1 : fill || 0} stroke="currentColor" stroke-width=${sw} stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d=${PATHS[name]} /></svg>`;
+
+/** Corazón relleno: la moneda de Lindwyrm (puntos de amor). */
+export const Heart = ({ size = 16, class: c }) => html`<svg class=${cx('heart', c)} width=${size} height=${size} viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21.2s-8.6-5.1-8.6-11.3A4.9 4.9 0 0 1 12 7.1a4.9 4.9 0 0 1 8.6 2.8c0 6.2-8.6 11.3-8.6 11.3z" fill="currentColor" /></svg>`;
+
+/** “❤ 120”: puntos de amor en una sola pieza que no se parte en dos renglones. */
+export const Points = ({ n, size = 15, class: c }) => html`<span class=${cx('pts', c)}><${Heart} size=${size} />${n}</span>`;
 
 export const Flame = ({ size = 24, lit = true, class: c }) => html`<svg class=${cx('flame', lit ? 'lit' : 'off', c)} width=${size} height=${size} viewBox="0 0 24 24" aria-hidden="true">
   <defs><linearGradient id="fg" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff3d6e" /><stop offset=".55" stop-color="#ff7a45" /><stop offset="1" stop-color="#ffc857" /></linearGradient></defs>

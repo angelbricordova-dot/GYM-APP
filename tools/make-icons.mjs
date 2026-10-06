@@ -1,4 +1,4 @@
-// Genera los iconos PNG de la app (sin dependencias): node tools/make-icons.mjs
+// Genera los iconos PNG de Lindwyrm (corazón blanco sobre degradado rosa→violeta) (sin dependencias): node tools/make-icons.mjs
 import { deflateSync } from 'node:zlib';
 import { mkdirSync, writeFileSync } from 'node:fs';
 
@@ -40,21 +40,13 @@ function png(size, pixel) {
   ]);
 }
 
-// Mancuerna en coordenadas 0..1: [x0, y0, x1, y1, radio]
-const SHAPES = [
-  [0.22, 0.475, 0.78, 0.525, 0.025], // barra
-  [0.30, 0.30, 0.38, 0.70, 0.03], // disco interior izq.
-  [0.62, 0.30, 0.70, 0.70, 0.03], // disco interior der.
-  [0.20, 0.38, 0.28, 0.62, 0.03], // disco exterior izq.
-  [0.72, 0.38, 0.80, 0.62, 0.03], // disco exterior der.
-];
-const inRound = (x, y, [x0, y0, x1, y1, r]) => {
-  const cx = Math.min(Math.max(x, x0 + r), x1 - r);
-  const cy = Math.min(Math.max(y, y0 + r), y1 - r);
-  return (x - cx) ** 2 + (y - cy) ** 2 <= r * r && x >= x0 && x <= x1 && y >= y0 && y <= y1;
+// Corazón (curva implícita clásica) centrado en el icono. Devuelve true si el punto (u, v) en 0..1 queda dentro.
+const inHeart = (u, v) => {
+  const x = (u - 0.5) / 0.27, y = -(v - 0.54) / 0.27;
+  return (x * x + y * y - 1) ** 3 - x * x * y ** 3 <= 0;
 };
 const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
-const A = [255, 138, 76], B = [255, 61, 110];
+const A = [255, 92, 147], B = [139, 124, 255];
 
 function icon(size) {
   const SS = 3; // supersampling para bordes suaves
@@ -63,7 +55,7 @@ function icon(size) {
     let hits = 0;
     for (let i = 0; i < SS; i++) for (let j = 0; j < SS; j++) {
       const x = u + (i + 0.5) / SS / size, y = v + (j + 0.5) / SS / size;
-      if (SHAPES.some((s) => inRound(x, y, s))) hits++;
+      if (inHeart(x, y)) hits++;
     }
     return mix(bg, [255, 255, 255], hits / (SS * SS));
   });
