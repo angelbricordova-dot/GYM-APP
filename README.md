@@ -14,7 +14,9 @@ Se instala en el iPhone como una app.
 | **Progreso** | **Análisis del mes**: días que fuiste, días que faltaste (según tu meta semanal y desde que empezaste a usar la app), semanas cumplidas, comparación con el mes anterior, series, kg movidos y récords. Calendario, tendencia de 6 meses, galería de fotos, gráficas por ejercicio y peso corporal. |
 | **Juntos** | **Retos**: uno le pone al otro “10 flexiones por 20 puntos”; quien lo recibe toca *Iniciar reto*, se **graba en la app** (o sube foto/video) y quien lo puso **revisa y aprueba** (o pide repetirlo). Al aprobar se suman los puntos. **Motivación**: tablero de notas con corazones. **Perfil de tu pareja**: su racha, calendario, fotos y análisis. |
 | **Puntos de amor** | +10 por check-in con foto, +5 por récord, +20 por meta semanal, bonus por racha y los de los retos aprobados. Los premios **se proponen y el otro acepta, rechaza o contraoferta**. Los canjes generan un cupón. |
-| **Perfil** | Foto de perfil, **color personal** (24 colores o cualquiera), tema **Automático / Día / Noche**, metas, pausa de racha, privacidad del peso (privado por defecto), PIN, **Google**. |
+| **Rutinas compartidas** | En *Juntos → Rutinas* uno le **recomienda una rutina** al otro (de sus rutinas, de un entreno reciente o de una plantilla; solo van los ejercicios, series y repeticiones, no tus kilos). Quien la recibe la ve como *Recomendada*, la abre, **empieza ahora**, la guarda en sus rutinas o la descarta. |
+| **Notificaciones push** | Retos, evidencias, aprobaciones, notas, corazones, rutinas recomendadas, premios y “tu pareja ya entrenó”. Cada tipo se puede apagar, y hay un **recordatorio diario** a la hora que elijas si aún no entrenaste. |
+| **Perfil** | Foto de perfil, **color personal** (24 colores o cualquiera), tema **Automático / Día / Noche**, metas, pausa de racha, privacidad del peso (privado por defecto), notificaciones, PIN, **Google**, **Reiniciar de cero** y **Eliminar mi usuario** (ambos piden escribir una palabra para confirmar). |
 | **Sin señal** | El check-in funciona sin internet: se guarda en el teléfono y se sincroniza (fotos incluidas) al volver la señal. Los retos y premios sí necesitan conexión. |
 
 ## Estructura
@@ -41,6 +43,7 @@ tools/make-icons.mjs      genera los iconos
 3. **Variables de entorno** (*Site configuration → Environment variables*):
    - `SETUP_CODE` — **recomendado**: una palabra secreta. Sin ella, cualquiera que encuentre la URL antes que ustedes podría crear el espacio.
    - `GOOGLE_CLIENT_ID` — solo si quieren entrar con Google (ver abajo).
+   - `VAPID_SUBJECT` — opcional (`mailto:tu@correo.com`). Por defecto se usa la URL del sitio.
 4. Abre la URL en el celular de la primera persona → **Crear nuestro espacio**. Te muestra un **código de invitación**;
    tu pareja abre la misma URL → **Unirme con código**. Cuando se unen los dos, el espacio queda cerrado.
 5. **iPhone**: abre la URL en **Safari** → Compartir → **Agregar a pantalla de inicio**.
@@ -49,20 +52,40 @@ tools/make-icons.mjs      genera los iconos
 
 ### Entrar con Google (opcional)
 
-1. En [Google Cloud Console](https://console.cloud.google.com/) → *APIs y servicios → Credenciales → Crear credenciales → ID de cliente de OAuth* → tipo **Aplicación web**.
-2. En **Orígenes autorizados de JavaScript** agrega la URL de tu sitio de Netlify (por ejemplo `https://lindwyrm.netlify.app`).
-3. Copia el ID de cliente en la variable `GOOGLE_CLIENT_ID` de Netlify y vuelve a desplegar.
-4. Aparece el botón **Continuar con Google** al crear/unirse/entrar, y en *Perfil → Cuenta* para vincular una cuenta existente.
+Solo se necesita el **ID de cliente** (no hay “secreto”). Paso a paso:
+
+1. Entra a [Google Cloud Console](https://console.cloud.google.com/) con tu cuenta de Google y crea un proyecto (arriba, selector de proyectos → *Proyecto nuevo* → nombre “Lindwyrm”).
+2. **Pantalla de consentimiento**: *APIs y servicios → Pantalla de consentimiento de OAuth* (o *Google Auth Platform → Branding*). Tipo de usuario **Externo**, nombre de la app “Lindwyrm”, tu correo de asistencia y de contacto. Déjala en estado **Testing** (Prueba).
+3. En **Usuarios de prueba** (*Público → Usuarios de prueba*) agrega **los dos correos de Google** que van a usar (el tuyo y el de Angélica). En modo Prueba solo esas cuentas pueden entrar, que es justo lo que quieren; no hace falta verificar la app.
+4. **Credenciales**: *APIs y servicios → Credenciales → Crear credenciales → ID de cliente de OAuth* → tipo de aplicación **Aplicación web**.
+5. En **Orígenes autorizados de JavaScript** agrega la URL exacta de tu sitio de Netlify, sin barra final (por ejemplo `https://lindwyrm.netlify.app`). Si luego usan un dominio propio, agrégalo también. Para pruebas locales: `http://localhost:8888`. No hace falta “URI de redireccionamiento”.
+6. Copia el **ID de cliente** (termina en `.apps.googleusercontent.com`).
+7. En Netlify → *Site configuration → Environment variables* crea `GOOGLE_CLIENT_ID` con ese valor y **vuelve a desplegar** (*Deploys → Trigger deploy*).
+8. Listo: aparece **Continuar con Google** al crear/unirse/entrar. Quien ya tiene cuenta con PIN la vincula en *Perfil → Cuenta*.
 
 > ⚠️ Google en una app instalada en la pantalla de inicio del iPhone puede abrir su ventana de forma distinta a Safari. Pruébalo en el teléfono real;
 > por eso siempre puedes crear un **PIN** en el perfil como respaldo.
+
+## Notificaciones push
+
+No necesitas configurar nada: las llaves (VAPID) se generan solas la primera vez y se guardan en el servidor.
+
+- **Android / computadora**: *Perfil → Notificaciones → En este teléfono* y aceptar el permiso.
+- **iPhone**: solo funcionan con la app **instalada en la pantalla de inicio** (Safari → Compartir → Agregar a pantalla de inicio), abierta desde su icono, con **iOS 16.4 o más reciente**. Después activa el interruptor en *Perfil → Notificaciones*. Hay un botón para mandarte una notificación de prueba.
+- El **recordatorio diario** lo manda una función programada de Netlify (`netlify/functions/reminders.mjs`, cada hora). Corre solo en el sitio publicado, no en `npm run dev`.
+- Si cambias el dominio del sitio, desactiva y vuelve a activar las notificaciones en cada teléfono.
+
+## Reiniciar y eliminar
+
+- **Reiniciar de cero** (*Perfil → Zona de peligro*): borra tus entrenos, check-ins, fotos, peso, puntos de amor, rutinas y pausas. Conserva tu cuenta, ajustes, foto y color; tu pareja no pierde nada. Los retos que te habían puesto y seguían pendientes se cancelan, y los puntos de retos anteriores no vuelven.
+- **Eliminar mi usuario**: borra la cuenta y todo lo que creaste. Tu pareja se queda con el espacio y un código de invitación nuevo; si eras la última persona, el espacio queda libre para crearse de nuevo.
 
 ## Desarrollo local
 
 ```bash
 npm install
 npm run dev     # http://localhost:8888 (datos en .localdb/, ignorado por git)
-npm test        # API, lógica y contraste de colores
+npm test        # API, push (simulado), lógica y contraste de colores
 ```
 
 ## Diseño
@@ -82,7 +105,7 @@ Los colores de ambos temas pasan una prueba automática de contraste 4.5:1 (`tes
 
 - Las evidencias de los retos pesan máx. 5 MB (el video se graba comprimido, hasta 20 s). Un video grabado en Android (WebM) puede no reproducirse en un iPhone antiguo.
 - Si usas tu cuenta en dos teléfonos a la vez, gana el cambio más reciente.
-- Sin notificaciones push todavía (retos, notas y recordatorios): siguiente paso.
+- Las notificaciones push no se pueden probar en `npm run dev` con servicios reales de Apple/Google: se probaron con un envío simulado. Pruébalas en el sitio publicado.
 - iOS no permite vibración desde la web.
 
 ## Notas técnicas

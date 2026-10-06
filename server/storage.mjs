@@ -21,10 +21,11 @@ function localStore(dir) {
     async del(key) {
       await ready;
       await rm(file(key), { force: true });
+      await rm(file(key + '.meta'), { force: true });
     },
     async list(prefix) {
       await ready;
-      return (await readdir(dir)).map(dec).filter((k) => k.startsWith(prefix)).sort();
+      return (await readdir(dir)).map(dec).filter((k) => k.startsWith(prefix) && !k.endsWith('.meta')).sort();
     },
     async getBin(key) {
       await ready;

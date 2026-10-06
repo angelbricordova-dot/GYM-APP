@@ -203,6 +203,20 @@ export function Stepper({ value, onChange, step = 1, min = 0, decimal, label, pl
   </div>`;
 };
 
+/** Campo numérico de una serie: número grande, unidad debajo y − / + a los lados. */
+export function NumField({ value, onChange, step = 1, min = 0, decimal, unit, label, placeholder = '0', done }) {
+  const bump = (d) => onChange(String(round(Math.max(min, num(value) + d * step))));
+  return html`<div class=${cx('numf', done && 'done')}>
+    <button type="button" class="nf-btn" onClick=${() => bump(-1)} aria-label=${`Menos ${label}`}><${Icon} name="minus" size=${15} sw=${2.6} /></button>
+    <label class="nf-mid">
+      <input class=${cx(String(value).length > 4 && 'long')} inputmode=${decimal ? 'decimal' : 'numeric'} enterkeyhint="done" value=${value} placeholder=${placeholder} aria-label=${label}
+        onInput=${(e) => onChange(e.target.value)} onFocus=${(e) => e.target.select()} />
+      <span class="nf-unit">${unit}</span>
+    </label>
+    <button type="button" class="nf-btn" onClick=${() => bump(1)} aria-label=${`Más ${label}`}><${Icon} name="plus" size=${15} sw=${2.6} /></button>
+  </div>`;
+}
+
 export const Field = ({ label, children, hint }) => html`<label class="field"><span>${label}</span>${children}${hint ? html`<small>${hint}</small>` : null}</label>`;
 
 export const Empty = ({ icon, title, text, action }) => html`<div class="empty"><div class="empty-ic">${icon}</div><b>${title}</b><p>${text}</p>${action}</div>`;

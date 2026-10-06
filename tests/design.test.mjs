@@ -13,7 +13,7 @@ const themes = { noche: tokens(':root, :root[data-theme=dark]'), día: tokens(':
 
 for (const [name, t] of Object.entries(themes)) {
   test(`contraste en modo ${name}: el texto se lee sobre sus fondos (≥ 4.5:1)`, () => {
-    const pairs = [['text', 'bg'], ['text', 's1'], ['text', 's2'], ['text2', 'bg'], ['text2', 's1'], ['text2', 's2'], ['love', 's1'], ['good', 's1'], ['bad', 's1'], ['warn', 's1'], ['ember', 's1']];
+    const pairs = [['text', 'bg'], ['text', 's1'], ['text', 's2'], ['text2', 'bg'], ['text2', 's1'], ['text2', 's2'], ['love', 's1'], ['good', 's1'], ['bad', 's1'], ['warn', 's1'], ['ember', 's1'], ['on-good', 'good'], ['on-bad', 'bad']];
     for (const [fg, bg] of pairs) assert.ok(contrast(t[fg], t[bg]) >= 4.5, `${name}: ${fg} ${t[fg]} sobre ${bg} ${t[bg]} = ${contrast(t[fg], t[bg]).toFixed(2)}`);
   });
 }
@@ -33,5 +33,5 @@ test('el acento como texto se puede aclarar/oscurecer hasta 4.5:1 en ambos modos
 });
 
 test('la hoja de estilos define todos los tokens en ambos temas', () => {
-  for (const t of Object.values(themes)) for (const k of ['bg', 's1', 's2', 's3', 'text', 'text2', 'love', 'good', 'bad', 'warn', 'ember']) assert.ok(t[k], `falta --${k}`);
+  for (const t of Object.values(themes)) for (const k of ['bg', 's1', 's2', 's3', 'text', 'text2', 'love', 'good', 'on-good', 'bad', 'on-bad', 'warn', 'ember']) assert.ok(t[k], `falta --${k}`);
 });

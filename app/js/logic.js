@@ -371,6 +371,16 @@ export function monthlyCounts(doc, n = 6, today = ymd()) {
   });
 }
 
+// ---------- rutinas ----------
+/** Una rutina guarda ejercicios como texto (las antiguas) o como { name, sets, reps } (las compartidas). */
+export const routineItems = (r) => r.exercises.map((e) => (typeof e === 'string' ? { name: e } : e));
+
+export const GROUP_COLORS = { Pecho: '#ff5c93', Espalda: '#38bdf8', Pierna: '#34d6a0', Hombro: '#ff9f0a', Brazo: '#8b7cff', Core: '#ffd60a', Cardio: '#ff453a' };
+export function groupOf(name) {
+  const k = keyOf(name);
+  return LIBRARY.find(([, list]) => list.some((x) => keyOf(x) === k))?.[0] || null;
+}
+
 // ---------- plantillas para empezar rápido ----------
 export const TEMPLATES = [
   { id: 'push', name: 'Empuje', sub: 'Pecho · hombro · tríceps', exercises: ['Press banca', 'Press inclinado con mancuernas', 'Press militar', 'Elevaciones laterales', 'Extensión en polea'] },

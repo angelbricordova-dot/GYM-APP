@@ -2,8 +2,9 @@ import { html, useState, useEffect } from '../../vendor/preact-htm.js';
 import * as S from '../store.js';
 import * as L from '../logic.js';
 import { Icon, fmtDay, fmtDur, cx } from './kit.js';
-import { openScreen } from './nav.js';
+import { openScreen, goTab } from './nav.js';
 import { beginWorkout } from './workout.js';
+import { ShareRoutineSheet } from './routines.js';
 
 /** Entrenar: el punto de partida. Un toque y ya estás anotando. */
 export function Train() {
@@ -12,6 +13,8 @@ export function Train() {
   const recent = [...me.sessions].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
   const last = recent[0];
   const [, tick] = useState(0);
+  const [share, setShare] = useState(null);
+  const recommended = S.routinesNew();
   useEffect(() => { if (!draft) return; const id = setInterval(() => tick((v) => v + 1), 1000); return () => clearInterval(id); }, [!!draft]);
 
   return html`<div class="view-in">
@@ -30,11 +33,16 @@ export function Train() {
           <span class="wh-go"><${Icon} name="play" size=${22} fill /></span>
         </button>`}
 
+    ${recommended.length > 0 && html`<section class="rise" style="--i:1">
+      <h3 class="sec-h">Recomendada por ${S.state.partner?.name}</h3>
+      <div class="group">${recommended.map((r) => html`<${Row} icon="send" title=${r.name} sub=${`${L.routineItems(r).length} ejercicios${r.note ? ` · “${r.note}”` : ''}`} onClick=${() => goTab('together')} />`)}</div>
+    </section>`}
+
     ${(me.routines.length > 0 || last) && html`<section class="rise" style="--i:1">
       <h3 class="sec-h">Con un toque</h3>
       <div class="group">
         ${last && html`<${Row} icon="repeat" title="Repetir el último" sub=${`${fmtDay(last.date)} · ${last.exercises.map((e) => e.name).join(', ')}`} onClick=${() => beginWorkout(last.exercises.map((e) => e.name))} />`}
-        ${me.routines.map((r) => html`<${Row} icon="list" title=${r.name} sub=${r.exercises.join(', ')} onClick=${() => beginWorkout(r.exercises)} trail=${html`<button class="icon-btn flat" onClick=${(e) => { e.stopPropagation(); if (confirm(`¿Eliminar la rutina ${r.name}?`)) S.deleteRoutine(r.id); }} aria-label=${`Eliminar ${r.name}`}><${Icon} name="trash" size=${16} /></button>`} />`)}
+        ${me.routines.map((r) => html`<${Row} icon="list" title=${r.name} sub=${L.routineItems(r).map((e) => e.name).join(', ')} onClick=${() => beginWorkout(L.routineItems(r))} trail=${html`${S.state.partner && html`<button class="icon-btn flat" onClick=${(e) => { e.stopPropagation(); setShare({ name: r.name, items: L.routineItems(r).map((x) => ({ name: x.name, sets: x.sets || 3, reps: x.reps || 10 })) }); }} aria-label=${`Recomendar ${r.name}`}><${Icon} name="send" size=${16} /></button>`}<button class="icon-btn flat" onClick=${(e) => { e.stopPropagation(); if (confirm(`¿Eliminar la rutina ${r.name}?`)) S.deleteRoutine(r.id); }} aria-label=${`Eliminar ${r.name}`}><${Icon} name="trash" size=${16} /></button>`} />`)}
       </div>
     </section>`}
 
@@ -43,6 +51,8 @@ export function Train() {
       <div class="group">${L.TEMPLATES.map((t) => html`<${Row} icon="dumbbell" title=${t.name} sub=${t.sub} onClick=${() => beginWorkout(t.exercises)} />`)}</div>
       <p class="sec-f">Después de entrenar puedes guardar tu propia rutina. La app recuerda tus pesos y te sugiere cuánto subir.</p>
     </section>
+
+    ${share && html`<${ShareRoutineSheet} preset=${share} onClose=${() => setShare(null)} />`}
 
     ${recent.length > 0 && html`<section class="rise" style="--i:3">
       <h3 class="sec-h">Recientes</h3>

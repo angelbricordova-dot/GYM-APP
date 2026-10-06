@@ -7,14 +7,14 @@ import { Auth } from './auth.js';
 import { Today } from './today.js';
 import { Train } from './train.js';
 import { Progress } from './progress.js';
-import { Together } from './together.js';
+import { Together, PartnerScreen } from './together.js';
 import { Rewards } from './rewards.js';
 import { Workout } from './workout.js';
 import { CheckIn } from './checkin.js';
 import { Profile, Onboarding } from './profile.js';
 
 const SCREENS = { today: Today, train: Train, progress: Progress, together: Together, rewards: Rewards };
-const OVERLAYS = { workout: Workout, checkin: CheckIn, profile: Profile };
+const OVERLAYS = { workout: Workout, checkin: CheckIn, profile: Profile, partner: PartnerScreen };
 // Cinco secciones, una palabra cada una (guía de iOS: pocas pestañas, etiquetas cortas, la barra solo navega).
 const TABS = [['today', 'home', 'Hoy'], ['train', 'dumbbell', 'Entrenar'], ['progress', 'chart', 'Progreso'], ['together', 'users', 'Juntos'], ['rewards', 'heart', 'Puntos']];
 
@@ -33,9 +33,12 @@ export function App() {
   const top = nav.stack.at(-1);
   const Overlay = top && OVERLAYS[top.id];
   const badge = {
-    together: S.challengesForMe().length + S.challengesToReview().length + S.unread(),
+    together: S.challengesForMe().length + S.challengesToReview().length + S.unread() + S.routinesNew().length,
     rewards: S.pendingForMe().length,
   };
+
+  const total = (badge.together || 0) + (badge.rewards || 0);
+  navigator.setAppBadge ? (total > 0 ? navigator.setAppBadge(total).catch(() => {}) : navigator.clearAppBadge().catch(() => {})) : null; // número en el icono de la app
 
   return html`<div class="app">
     ${offline && html`<div class="net-pill" role="status">Sin conexión · todo se guarda en tu teléfono</div>`}

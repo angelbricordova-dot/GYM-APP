@@ -3,7 +3,8 @@ import * as S from '../store.js';
 import * as L from '../logic.js';
 import { processImage, toDataURL } from '../photos.js';
 import { getTheme, setTheme, accentVars } from '../theme.js';
-import { Icon, Avatar, Stepper, Field, Segmented, toast, cx } from './kit.js';
+import { Icon, Sheet, Avatar, Stepper, Field, Segmented, toast, cx } from './kit.js';
+import { pushSupport, currentSubscription, enablePush, disablePush, setPrefs, sendTest } from '../push.js';
 import { GoogleButton } from './google-button.js';
 import { closeScreen } from './nav.js';
 
@@ -30,13 +31,7 @@ export function Profile() {
     } catch { toast('No pude leer esa foto', { icon: '⚠️' }); }
   };
 
-  const exportData = () => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([S.exportJSON()], { type: 'application/json' }));
-    a.download = `lindwyrm-respaldo-${L.ymd()}.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  };
+  const [danger, setDanger] = useState(null); // 'reset' | 'delete'
 
   const link = async (credential) => {
     const r = await S.linkGoogle(credential);
@@ -84,6 +79,9 @@ export function Profile() {
           <button class=${cx('btn tinted sm')} onClick=${() => (paused ? S.endPause() : confirm('¿Pausar tu racha hasta que la reanudes?') && S.startPause())}>${paused ? 'Reanudar' : 'Pausar'}</button></div>
       </div>
 
+      <h3 class="sec-h">Notificaciones</h3>
+      <${Notifications} acc=${acc} />
+
       <h3 class="sec-h">Cuenta</h3>
       <div class="group pad stack">
         <div class="acct"><span class="lead"><${Icon} name="lock" size=${18} /></span><div class="grow"><b>Google</b><small class="muted">${acc.google ? `Vinculada${acc.email ? ` · ${acc.email}` : ''}` : googleId ? 'Vincula tu cuenta para entrar con un toque' : 'No disponible: falta configurar GOOGLE_CLIENT_ID en Netlify'}</small></div></div>
@@ -93,9 +91,15 @@ export function Profile() {
         <//>
       </div>
       <div class="group">
-        <button class="row" onClick=${exportData}><span class="lead"><${Icon} name="copy" size=${18} /></span><div class="grow"><b>Descargar mis datos</b></div></button>
+        <button class="row" onClick=${downloadData}><span class="lead"><${Icon} name="copy" size=${18} /></span><div class="grow"><b>Descargar mis datos</b></div></button>
         <button class="row danger" onClick=${() => { if (confirm('¿Cerrar sesión en este teléfono? Tus datos siguen guardados en la nube.')) { closeScreen(); S.logout(); } }}><span class="lead"><${Icon} name="logout" size=${18} /></span><div class="grow"><b>Cerrar sesión</b></div></button>
       </div>
+      <h3 class="sec-h">Zona de peligro</h3>
+      <div class="group">
+        <button class="row danger" onClick=${() => setDanger('reset')}><span class="lead"><${Icon} name="history" size=${18} /></span><div class="grow"><b>Reiniciar de cero</b><small class="muted">Borra todo tu progreso y empieza otra vez</small></div><${Icon} name="right" size=${16} class="chev" /></button>
+        <button class="row danger" onClick=${() => setDanger('delete')}><span class="lead"><${Icon} name="trash" size=${18} /></span><div class="grow"><b>Eliminar mi usuario</b><small class="muted">Borra tu cuenta y todo lo que creaste</small></div><${Icon} name="right" size=${16} class="chev" /></button>
+      </div>
+      ${danger && html`<${DangerSheet} kind=${danger} onClose=${() => setDanger(null)} />`}
       <p class="sec-f center">Lindwyrm · ${S.net.online ? 'Conectado' : 'Sin conexión'}${S.state.dirty ? ' · cambios por sincronizar' : ' · todo sincronizado'}</p>
     </div>
   </div>`;
@@ -140,4 +144,96 @@ export function Onboarding({ onClose }) {
       </div>
     </div>
   </div>`;
+}
+
+function downloadData() {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([S.exportJSON()], { type: 'application/json' }));
+  a.download = `lindwyrm-respaldo-${L.ymd()}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ============ notificaciones ============
+const KINDS = [
+  ['challenges', 'Retos', 'Te retan, envían evidencia o la aprueban'],
+  ['notes', 'Notas y corazones', 'Mensajes de ánimo de tu pareja'],
+  ['workouts', 'Entrenos de tu pareja', 'Cuando termina su entreno del día'],
+  ['routines', 'Rutinas', 'Te recomiendan una rutina'],
+  ['prizes', 'Premios', 'Ideas, contraofertas y canjes'],
+];
+
+function Notifications({ acc }) {
+  const sup = pushSupport();
+  const prefs = acc.push?.prefs || { challenges: true, notes: true, workouts: true, routines: true, prizes: true, reminder: false, reminderHour: 18 };
+  const [on, setOn] = useState(null); // este teléfono está suscrito
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { currentSubscription().then((s) => setOn(!!s && Notification.permission === 'granted')).catch(() => setOn(false)); }, []);
+
+  if (sup.needsInstall) {
+    return html`<div class="group pad"><b>Instala la app para recibir avisos</b>
+      <p class="muted small">En iPhone las notificaciones solo funcionan con Lindwyrm en la pantalla de inicio: en Safari toca <b>Compartir</b> → <b>Agregar a pantalla de inicio</b>, ábrela desde su icono y vuelve aquí. Necesitas iOS 16.4 o más reciente.</p></div>`;
+  }
+  if (!sup.supported) return html`<div class="group pad"><b>No disponible aquí</b><p class="muted small">Este navegador no admite notificaciones push.</p></div>`;
+
+  const toggle = async (e) => {
+    const want = e.target.checked;
+    setOn(want); // optimista: se mueve al instante y se revierte si el teléfono dice que no
+    setBusy(true);
+    if (want) {
+      const r = await enablePush();
+      setOn(r.ok);
+      if (!r.ok) toast(r.error, { icon: '⚠️' }); else toast('Notificaciones activadas', { icon: '🔔' });
+    } else await disablePush();
+    setBusy(false);
+  };
+  const test = async () => { const r = await sendTest(); toast(r.ok ? 'Enviada: debería llegarte en segundos' : r.data.error, { icon: r.ok ? '🔔' : '⚠️' }); };
+  const hour = prefs.reminderHour;
+
+  return html`<div class="group">
+    <label class="row switch-row"><div class="grow"><b>En este teléfono</b><small class="muted">${sup.permission === 'denied' ? 'Bloqueadas: actívalas en Ajustes → Lindwyrm → Notificaciones' : on ? 'Activadas' : 'Recibe avisos de tu pareja'}</small></div><input type="checkbox" checked=${!!on} disabled=${busy || sup.permission === 'denied'} onChange=${toggle} /></label>
+    ${on && html`
+      ${KINDS.map(([k, title, sub]) => html`<label class="row switch-row"><div class="grow"><b>${title}</b><small class="muted">${sub}</small></div><input type="checkbox" checked=${prefs[k]} onChange=${(e) => setPrefs({ [k]: e.target.checked })} /></label>`)}
+      <label class="row switch-row"><div class="grow"><b>Recordatorio diario</b><small class="muted">Si aún no entrenaste, te aviso a esta hora</small></div><input type="checkbox" checked=${prefs.reminder} onChange=${(e) => setPrefs({ reminder: e.target.checked })} /></label>
+      ${prefs.reminder && html`<div class="row static"><div class="grow"><b>Hora del recordatorio</b><small class="muted">${String(hour).padStart(2, '0')}:00 (hora de tu teléfono)</small></div><${Stepper} value=${hour} onChange=${(v) => setPrefs({ reminderHour: Math.max(0, Math.min(23, Math.round(L.num(v)))) })} label="Hora" /></div>`}
+      <button class="row" onClick=${test}><span class="lead"><${Icon} name="send" size=${18} /></span><div class="grow"><b>Enviar una notificación de prueba</b></div></button>`}
+  </div>`;
+}
+
+// ============ reiniciar y eliminar ============
+const COPY = {
+  reset: {
+    title: 'Reiniciar de cero', word: 'REINICIAR', cta: 'Borrar todo mi progreso',
+    lose: ['Todos tus entrenos y ejercicios', 'Tu racha, check-ins y fotos del espejo', 'Tu peso registrado y tus puntos de amor', 'Tus rutinas y pausas'],
+    keep: ['Tu cuenta, nombre, foto de perfil y color', 'Tus metas y ajustes', 'Tu pareja, sus datos y las notas del tablero'],
+  },
+  delete: {
+    title: 'Eliminar mi usuario', word: 'ELIMINAR', cta: 'Eliminar mi cuenta para siempre',
+    lose: ['Tu cuenta, tu PIN y tu vínculo con Google', 'Todo tu progreso, fotos y puntos', 'Tus notas, retos, rutinas y premios propuestos', 'Tu lugar en el espacio: tu pareja se queda sola con un código nuevo'],
+    keep: [],
+  },
+};
+
+function DangerSheet({ kind, onClose }) {
+  const c = COPY[kind];
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const ok = typed.trim().toUpperCase() === c.word;
+  const go = async () => {
+    setBusy(true);
+    const r = kind === 'reset' ? await S.resetProgress() : await S.deleteAccount();
+    setBusy(false);
+    if (!r.ok) return toast(r.data.error || 'No se pudo completar. Revisa tu conexión.', { icon: '⚠️' });
+    if (kind === 'reset') { toast('Listo: empiezas de cero', { icon: '🌱' }); onClose(); }
+  };
+  return html`<${Sheet} title=${c.title} onClose=${onClose}>
+    <div class="danger-box"><b>Esto no se puede deshacer.</b></div>
+    <h3 class="sec-h flush">Se borrará</h3>
+    <ul class="bullets bad">${c.lose.map((t) => html`<li>${t}</li>`)}</ul>
+    ${c.keep.length > 0 && html`<h3 class="sec-h flush">Se conserva</h3><ul class="bullets good">${c.keep.map((t) => html`<li>${t}</li>`)}</ul>`}
+    <button class="btn tinted block" onClick=${downloadData}><${Icon} name="copy" size=${16} /> Descargar mis datos primero</button>
+    <${Field} label=${`Para confirmar, escribe ${c.word}`}><input value=${typed} onInput=${(e) => setTyped(e.target.value)} autocapitalize="characters" autocomplete="off" placeholder=${c.word} /><//>
+    <button class="btn danger-fill block lg" disabled=${!ok || busy} onClick=${go}>${busy ? 'Un momento…' : c.cta}</button>
+    <button class="link" onClick=${onClose}>Cancelar</button>
+  <//>`;
 }

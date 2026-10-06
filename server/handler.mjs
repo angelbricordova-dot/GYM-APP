@@ -3,8 +3,14 @@
 // lo compartido (propuestas, cupones, mensajes, fotos) vive en claves aparte para que no se pisen.
 import { randomBytes, randomUUID, scrypt, timingSafeEqual, createHmac, createPublicKey, verify as cryptoVerify } from 'node:crypto';
 import { createStorage } from './storage.mjs';
+import { createPush, DEFAULT_PREFS } from './push.mjs';
+import * as L from '../app/js/logic.js';
+
+export { _push } from './push.mjs';
 
 const db = createStorage();
+const push = createPush(db);
+export const runReminders = (now) => push.runReminders(now);
 const TOKEN_DAYS = 180;
 const MAX_DOC = 1_500_000;
 const MAX_PHOTO = 3_000_000;
@@ -193,6 +199,11 @@ async function login(body) {
   return json(200, { token: await sign(user.id), uid: user.id });
 }
 
+const partnerOf = async (user) => (await db.get('meta')).users.find((id) => id !== user.id);
+/** Avisa a la pareja sin bloquear ni romper la acción que lo originó. */
+const tell = async (user, msg) => { const to = await partnerOf(user); return to ? push.notify(to, msg) : null; };
+const first = (s) => String(s).split(' ')[0];
+
 async function listItems(prefix, limit) {
   const keys = (await db.list(prefix)).slice(-limit);
   return (await Promise.all(keys.map((k) => db.get(k)))).filter(Boolean);
@@ -204,15 +215,15 @@ async function sync(user, url) {
   const partnerRec = partnerId ? await db.get(`user/${partnerId}`) : null;
   const meAt = Number(url.searchParams.get('meAt')) || 0;
   const partnerAt = Number(url.searchParams.get('partnerAt')) || 0;
-  const [proposals, vouchers, messages, challenges] = await Promise.all([listItems('proposal/', 100), listItems('voucher/', 60), listItems('message/', 60), listItems('challenge/', 80)]);
+  const [proposals, vouchers, messages, challenges, routines] = await Promise.all([listItems('proposal/', 100), listItems('voucher/', 60), listItems('message/', 60), listItems('challenge/', 80), listItems('routine/', 40)]);
   return json(200, {
     me: user.doc.updatedAt > meAt ? user.doc : null,
     partner: partnerRec
       ? { id: partnerRec.id, name: partnerRec.name, doc: partnerRec.doc.updatedAt > partnerAt ? publicDoc(partnerRec.doc) : null, updatedAt: partnerRec.doc.updatedAt }
       : null,
     inviteCode: !partnerRec && meta.users[0] === user.id ? meta.inviteCode : null,
-    proposals, vouchers, messages, challenges,
-    account: { google: !!user.googleSub, email: user.email || '', hasPin: !!user.hash },
+    proposals, vouchers, messages, challenges, routines,
+    account: { google: !!user.googleSub, email: user.email || '', hasPin: !!user.hash, push: { devices: (user.push || []).length, prefs: { ...DEFAULT_PREFS, ...user.pushPrefs } } },
     serverTime: Date.now(),
   });
 }
@@ -227,9 +238,17 @@ async function putMe(user, req) {
   if ((doc.updatedAt || 0) < user.doc.updatedAt) return json(409, { error: 'Hay datos más nuevos en otro dispositivo.', doc: user.doc });
   doc.id = user.id;
   doc.name = clean(doc.name, 20) || user.name;
+  if (typeof doc.tz !== 'string' || doc.tz.length > 60) doc.tz = user.doc.tz || 'UTC';
+  const before = new Set(Object.keys(user.doc.checkins || {}));
+  const added = Object.keys(doc.checkins || {}).filter((d) => !before.has(d));
   user.doc = doc;
   user.name = doc.name;
   await db.set(`user/${user.id}`, user);
+  const today = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+  if (added.some((d) => d >= today)) { // solo check-ins recientes: ediciones de días viejos no avisan
+    const info = L.streakInfo(doc, added.sort().at(-1));
+    await tell(user, { type: 'workouts', title: `${first(user.name)} ya entrenó 🔥`, body: info.current > 1 ? `Va en racha de ${info.current} días. ¡Mándale ánimo!` : '¡Mándale ánimo!', url: '/?tab=together' });
+  }
   return json(200, { ok: true, updatedAt: doc.updatedAt });
 }
 
@@ -257,6 +276,7 @@ async function postProposal(user, body) {
   const id = randomUUID();
   const p = { id, name, emoji: clean(body.emoji, 4) || '🎁', note: clean(body.note, 140), cost, by: user.id, lastBy: user.id, status: 'pending', history: [{ by: user.id, cost, ts: Date.now() }], createdAt: Date.now() };
   await db.set(`proposal/${id}`, p);
+  await tell(user, { type: 'prizes', title: `${first(user.name)} propuso un premio ${p.emoji}`, body: `${p.name} · ${p.cost} puntos de amor`, url: '/?tab=rewards' });
   return json(200, { proposal: p });
 }
 
@@ -274,6 +294,8 @@ async function decideProposal(user, id, body) {
   } else return fail(400, 'Acción inválida.');
   p.updatedAt = Date.now();
   await db.set(`proposal/${id}`, p);
+  const verb = { accepted: 'aceptó', declined: 'rechazó' }[p.status] || `contraofertó ${p.cost} puntos por`;
+  await tell(user, { type: 'prizes', title: `${first(user.name)} ${verb} tu idea ${p.emoji}`, body: p.name, url: '/?tab=rewards' });
   return json(200, { proposal: p });
 }
 
@@ -283,6 +305,7 @@ async function postVoucher(user, body) {
   const id = randomUUID();
   const v = { id, proposalId: p.id, name: p.name, emoji: p.emoji, cost: p.cost, by: user.id, status: 'open', ts: Date.now() };
   await db.set(`voucher/${String(v.ts).padStart(13, '0')}-${id}`, v);
+  await tell(user, { type: 'prizes', title: `${first(user.name)} canjeó ${p.emoji} ${p.name}`, body: 'Tienes un cupón por cumplir', url: '/?tab=rewards' });
   return json(200, { voucher: v });
 }
 
@@ -303,6 +326,9 @@ async function postMessage(user, body) {
   const ref = body.ref && typeof body.ref === 'object' ? { uid: clean(body.ref.uid, 60), date: clean(body.ref.date, 10) } : null;
   const m = { id, from: user.id, text, kind, ref, likes: [], ts: Date.now() };
   await db.set(`message/${String(m.ts).padStart(13, '0')}-${id}`, m);
+  await tell(user, kind === 'reaction'
+    ? { type: 'notes', title: `${first(user.name)} reaccionó ${text} a tu entreno`, url: '/?tab=together' }
+    : { type: 'notes', title: `💌 Nota de ${first(user.name)}`, body: text, url: '/?tab=together' });
   return json(200, { message: m });
 }
 
@@ -315,6 +341,7 @@ async function likeMessage(user, id) {
   m.likes = m.likes || [];
   m.likes = m.likes.includes(user.id) ? m.likes.filter((x) => x !== user.id) : [...m.likes, user.id];
   await db.set(key, m);
+  if (m.likes.includes(user.id) && m.from !== user.id) await push.notify(m.from, { type: 'notes', title: `${first(user.name)} le dio ❤️ a tu nota`, body: m.text, url: '/?tab=together' });
   return json(200, { message: m });
 }
 
@@ -347,6 +374,7 @@ async function postChallenge(user, body) {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(body.date || '') ? body.date : new Date().toISOString().slice(0, 10);
   const c = { id: randomUUID(), ts: Date.now(), from: user.id, to, title, detail: clean(body.detail, 140), points, date, status: 'open', evidence: null };
   await db.set(challengeKey(c), c);
+  await push.notify(to, { type: 'challenges', title: `${first(user.name)} te retó 🎯`, body: `${title} · ${points} puntos de amor`, url: '/?tab=today' });
   return json(200, { challenge: c });
 }
 
@@ -383,6 +411,9 @@ async function challengeAction(user, id, action, req, url, body) {
   } else return fail(404, 'Ruta no encontrada.');
   c.updatedAt = Date.now();
   await db.set(key, c);
+  const other = isTo ? c.from : c.to;
+  if (action === 'evidence') await push.notify(other, { type: 'challenges', title: `${first(user.name)} envió su evidencia 📹`, body: `${c.title}: revísala y apruébala`, url: '/?tab=today' });
+  else if (action === 'review') await push.notify(other, { type: 'challenges', title: c.status === 'approved' ? `¡Reto aprobado! +${c.points} puntos de amor 💗` : 'Te pidieron repetir el reto', body: c.status === 'approved' ? c.title : c.note || c.title, url: '/?tab=today' });
   return json(200, { challenge: c });
 }
 
@@ -391,6 +422,98 @@ async function getEvidence(id) {
   const bin = f && f.c.evidence && (await db.getBin(`evidence/${id}`));
   if (!bin) return fail(404, 'No hay evidencia para ese reto.');
   return new Response(bin.data, { headers: { 'content-type': bin.type, 'cache-control': 'private, max-age=3600' } });
+}
+
+// ---------- rutinas compartidas ----------
+// Una persona le recomienda una rutina a la otra. Quien la recibe la ve en Juntos → Rutinas y puede empezarla, guardarla o descartarla.
+const routineKey = (r) => `routine/${String(r.ts).padStart(13, '0')}-${r.id}`;
+
+async function postRoutine(user, body) {
+  const to = await partnerOf(user);
+  if (!to) return fail(409, 'Tu pareja aún no se une.');
+  const name = clean(body.name, 40);
+  const list = Array.isArray(body.exercises) ? body.exercises.slice(0, 20) : [];
+  const exercises = list
+    .map((e) => ({ name: clean(typeof e === 'string' ? e : e?.name, 40), sets: Math.min(10, Math.max(1, Math.round(Number(e?.sets)) || 3)), reps: Math.min(50, Math.max(1, Math.round(Number(e?.reps)) || 10)) }))
+    .filter((e) => e.name);
+  if (!name || !exercises.length) return fail(400, 'Ponle nombre y al menos un ejercicio.');
+  const r = { id: randomUUID(), ts: Date.now(), from: user.id, to, name, note: clean(body.note, 200), exercises, status: 'new' };
+  await db.set(routineKey(r), r);
+  await push.notify(to, { type: 'routines', title: `${first(user.name)} te recomendó una rutina 🏋️`, body: `${name} · ${exercises.length} ejercicios`, url: '/?tab=together' });
+  return json(200, { routine: r });
+}
+
+async function routineAction(user, id, action) {
+  const key = await findKey('routine/', id);
+  const r = key && (await db.get(key));
+  if (!r) return fail(404, 'No existe esa rutina.');
+  if (action === 'delete') {
+    if (r.from !== user.id) return fail(403, 'Solo quien la compartió puede quitarla.');
+    await db.del(key);
+    return json(200, { ok: true });
+  }
+  if (r.to !== user.id) return fail(403, 'Esa rutina es para tu pareja.');
+  const order = { new: 0, seen: 1, dismissed: 2, saved: 3 };
+  const next = { seen: 'seen', save: 'saved', dismiss: 'dismissed' }[action];
+  if (!next) return fail(404, 'Ruta no encontrada.');
+  if (order[next] >= order[r.status]) { r.status = next; r.updatedAt = Date.now(); await db.set(key, r); }
+  return json(200, { routine: r });
+}
+
+// ---------- reiniciar progreso y eliminar cuenta ----------
+const wipePhotos = async (uid) => { for (const k of await db.list(`photo/${uid}/`)) await db.del(k); };
+
+/** Borra TODO el progreso de esta persona (entrenos, check-ins, fotos, peso, puntos, rutinas, pausas) y conserva su cuenta y ajustes. */
+async function resetMe(user) {
+  await wipePhotos(user.id);
+  for (const k of await db.list('challenge/')) {
+    const c = await db.get(k);
+    if (c?.to !== user.id) continue;
+    if (c.evidence) { await db.del(`evidence/${c.id}`); c.evidence = { ...c.evidence, removed: true }; }
+    if (['open', 'started', 'submitted', 'rejected'].includes(c.status)) c.status = 'cancelled'; // sus retos pendientes se cancelan
+    await db.set(k, c);
+  }
+  for (const k of await db.list('routine/')) { const r = await db.get(k); if (r?.to === user.id && r.status !== 'new') await db.del(k); }
+  const d = user.doc;
+  const now = Date.now();
+  user.doc = {
+    ...emptyDoc(user.id, user.name, { color: d.color }),
+    avatar: d.avatar, heightCm: d.heightCm, weeklyGoal: d.weeklyGoal, restDays: d.restDays, shareWeight: d.shareWeight, tz: d.tz, onboarded: d.onboarded,
+    resetAt: now, createdAt: now, updatedAt: Math.max(now, d.updatedAt + 1),
+  };
+  await db.set(`user/${user.id}`, user);
+  return json(200, { ok: true, doc: user.doc });
+}
+
+/** Elimina la cuenta y todo lo que esta persona creó. Si era la última, el espacio queda libre para crearse de nuevo. */
+async function deleteMe(user) {
+  const meta = await db.get('meta');
+  await wipePhotos(user.id);
+  for (const k of await db.list('challenge/')) {
+    const c = await db.get(k);
+    if (c && (c.from === user.id || c.to === user.id)) { await db.del(`evidence/${c.id}`); await db.del(k); }
+  }
+  for (const [prefix, who] of [['message/', 'from'], ['routine/', 'from'], ['voucher/', 'by'], ['proposal/', 'by']]) {
+    for (const k of await db.list(prefix)) { const x = await db.get(k); if (x && (x[who] === user.id || x.to === user.id)) await db.del(k); }
+  }
+  await db.del(`user/${user.id}`);
+  meta.users = meta.users.filter((id) => id !== user.id);
+  if (!meta.users.length) await db.del('meta');
+  else { meta.inviteCode = Array.from(randomBytes(6), (b) => INVITE_ALPHABET[b % INVITE_ALPHABET.length]).join(''); await db.set('meta', meta); }
+  return json(200, { ok: true });
+}
+
+// ---------- notificaciones push ----------
+async function pushRoutes(user, path, body, method) {
+  if (method === 'GET' && path === '/push/key') return json(200, { key: await push.publicKey() });
+  if (path === '/push/subscribe') return (await push.subscribe(user, body.subscription)) ? json(200, { ok: true }) : fail(400, 'Suscripción inválida.');
+  if (path === '/push/unsubscribe') { await push.unsubscribe(user, String(body.endpoint || '')); return json(200, { ok: true }); }
+  if (path === '/push/prefs') return json(200, { prefs: await push.setPrefs(user, body) });
+  if (path === '/push/test') {
+    const r = await push.notify(user.id, { title: 'Lindwyrm', body: '¡Las notificaciones funcionan! 💗', url: '/', tag: 'test' });
+    return r.sent ? json(200, { ok: true, sent: r.sent }) : fail(409, 'No hay ningún dispositivo suscrito. Activa las notificaciones primero.');
+  }
+  return fail(404, 'Ruta no encontrada.');
 }
 
 // ---------- router ----------
@@ -420,6 +543,11 @@ export default async function handler(req) {
     if (m === 'POST' && path === '/vouchers') return await postVoucher(user, await body());
     if (m === 'POST' && (r = path.match(/^\/vouchers\/([^/]+)\/done$/))) return await doneVoucher(r[1]);
     if (m === 'POST' && path === '/messages') return await postMessage(user, await body());
+    if (path.startsWith('/push/')) return await pushRoutes(user, path, m === 'POST' ? await body() : {}, m);
+    if (m === 'POST' && path === '/me/reset') return await resetMe(user);
+    if (m === 'POST' && path === '/me/delete') return await deleteMe(user);
+    if (m === 'POST' && path === '/routines') return await postRoutine(user, await body());
+    if (m === 'POST' && (r = path.match(/^\/routines\/([^/]+)\/(seen|save|dismiss|delete)$/))) return await routineAction(user, r[1], r[2]);
     if (m === 'POST' && path === '/auth/google/link') return await linkGoogle(user, await body());
     if (m === 'POST' && path === '/auth/pin') return await setPin(user, await body());
     if (m === 'POST' && path === '/challenges') return await postChallenge(user, await body());

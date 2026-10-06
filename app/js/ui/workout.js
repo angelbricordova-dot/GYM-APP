@@ -1,7 +1,7 @@
 import { html, useState, useEffect, useMemo } from '../../vendor/preact-htm.js';
 import * as S from '../store.js';
 import * as L from '../logic.js';
-import { Icon, Sheet, Stepper, Field, Points, toast, fmtDur, fmtKg, fmtShort, cx } from './kit.js';
+import { Icon, Sheet, NumField, Field, Points, toast, fmtDur, fmtKg, fmtShort, cx } from './kit.js';
 import { closeScreen, replaceScreen, openScreen } from './nav.js';
 import { haptic } from '../theme.js';
 
@@ -9,22 +9,25 @@ const uid = L.uid;
 const REST_KEY = 'gymduo.rest';
 const restDefault = () => { try { return Number(localStorage.getItem(REST_KEY)) || 90; } catch { return 90; } };
 
-const draftFrom = (names, doc) => ({
+const draftFrom = (items, doc) => ({
   startedAt: Date.now(),
   note: '',
-  exercises: names.map((n) => newExercise(n, doc)),
+  exercises: items.map((it) => newExercise(typeof it === 'string' ? { name: it } : it, doc)),
 });
 
-/** Arranca un entreno con esos ejercicios (ya con la meta de la vez pasada) y abre la pantalla de entreno. */
-export function beginWorkout(names) {
-  S.setDraft(draftFrom(names, S.state.me));
+/** Arranca un entreno con esos ejercicios (texto o { name, sets, reps }) ya con la meta de la vez pasada, y abre la pantalla. */
+export function beginWorkout(items) {
+  S.setDraft(draftFrom(items, S.state.me));
   openScreen('workout');
 }
 
-function newExercise(name, doc) {
+/** Sets precargados: tu meta si ya hiciste el ejercicio; si no, lo que sugiere la rutina (series y repeticiones); si no, tres vacías. */
+function newExercise({ name, sets, reps }, doc) {
   const s = L.suggestNext(doc, name);
-  const n = s ? s.sets : 3;
-  return { id: uid(), name, sets: Array.from({ length: n }, () => ({ id: uid(), kg: s ? String(s.kg) : '', reps: s ? String(s.reps) : '', done: false })) };
+  const n = s ? s.sets : sets || 3;
+  const kg = s ? String(s.kg) : '';
+  const r = s ? String(s.reps) : reps ? String(reps) : '';
+  return { id: uid(), name, sets: Array.from({ length: n }, () => ({ id: uid(), kg, reps: r, done: false })) };
 }
 
 /** Entreno en vivo: pensado para usarse con una mano, entre series. */
@@ -47,6 +50,7 @@ export function Workout() {
 
   const elapsed = Math.floor((Date.now() - draft.startedAt) / 1000);
   const doneSets = draft.exercises.reduce((a, ex) => a + ex.sets.filter((s) => s.done).length, 0);
+  const totalSets = draft.exercises.reduce((a, ex) => a + ex.sets.length, 0);
   const left = rest ? Math.ceil((rest.endsAt - Date.now()) / 1000) : 0;
 
   const toggleSet = (exId, setId) => {
@@ -61,10 +65,11 @@ export function Workout() {
   return html`<div class="screen workout">
     <div class="screen-top">
       <button class="icon-btn" onClick=${closeScreen} aria-label="Minimizar entreno"><${Icon} name="chevD" size=${20} /></button>
-      <div class="w-clock"><span>${fmtDur(elapsed)}</span><small>${doneSets} series hechas</small></div>
+      <div class="w-clock"><span>${fmtDur(elapsed)}</span><small>${doneSets} de ${totalSets} series</small></div>
       <button class="btn primary sm" onClick=${() => setFinish(true)}>Terminar</button>
     </div>
 
+    <div class="w-progress" role="progressbar" aria-valuemin="0" aria-valuemax=${totalSets} aria-valuenow=${doneSets} aria-label="Series hechas"><i style=${`width:${totalSets ? (doneSets / totalSets) * 100 : 0}%`}></i></div>
     <div class="screen-body">
       ${draft.exercises.map((ex) => html`<${ExerciseCard} key=${ex.id} ex=${ex} doc=${doc} edit=${edit} toggle=${toggleSet} />`)}
       <button class=${cx('btn block add-ex', draft.exercises.length === 0 && 'primary lg')} onClick=${() => setPicker(true)}><${Icon} name="plus" size=${18} /> Agregar ejercicio</button>
@@ -79,7 +84,7 @@ export function Workout() {
       <button onClick=${() => setRest(null)} aria-label="Cerrar descanso"><${Icon} name="x" size=${16} /></button>
     </div>`}
 
-    ${picker && html`<${ExercisePicker} doc=${doc} added=${draft.exercises.map((e) => L.keyOf(e.name))} onAdd=${(name) => edit((d) => d.exercises.push(newExercise(name, doc)))} onClose=${() => setPicker(false)} />`}
+    ${picker && html`<${ExercisePicker} doc=${doc} added=${draft.exercises.map((e) => L.keyOf(e.name))} onAdd=${(name) => edit((d) => d.exercises.push(newExercise({ name }, doc)))} onClose=${() => setPicker(false)} />`}
     ${finish && html`<${FinishSheet} draft=${draft} doc=${doc} edit=${edit} onClose=${() => setFinish(false)} />`}
   </div>`;
 }
@@ -87,35 +92,46 @@ export function Workout() {
 function ExerciseCard({ ex, doc, edit, toggle }) {
   const sug = useMemo(() => L.suggestNext(doc, ex.name), [ex.name, doc.sessions.length]);
   const prev = sug?.last.sets || [];
-  const complete = ex.sets.length > 0 && ex.sets.every((s) => s.done);
+  const group = L.groupOf(ex.name);
+  const color = L.GROUP_COLORS[group] || 'var(--accent)';
+  const doneN = ex.sets.filter((s) => s.done).length;
+  const complete = ex.sets.length > 0 && doneN === ex.sets.length;
   const [open, setOpen] = useState(null); // null = automático: se pliega al completarse
   const expanded = open ?? !complete;
+  const upd = (setId, field) => (v) => edit((d) => { d.exercises.find((e) => e.id === ex.id).sets.find((s) => s.id === setId)[field] = v; });
+
   if (!expanded) {
     const top = Math.max(...ex.sets.map((s) => L.num(s.kg)));
-    return html`<button class="ex-done" onClick=${() => setOpen(true)}>
+    return html`<button class="ex-done" style=${`--g:${color}`} onClick=${() => setOpen(true)}>
       <span class="ex-done-ic"><${Icon} name="check" size=${16} sw=${3} /></span>
       <span class="grow"><b>${ex.name}</b><small class="muted">${ex.sets.length} series${top ? ` · hasta ${top} kg` : ''}</small></span>
       <${Icon} name="chevD" size=${16} />
     </button>`;
   }
-  const upd = (setId, field) => (v) => edit((d) => { d.exercises.find((e) => e.id === ex.id).sets.find((s) => s.id === setId)[field] = v; });
-  return html`<section class=${cx('ex-card', complete && 'complete')}>
-    <header>
-      <div><b>${ex.name}</b>
-        ${sug ? html`<small class=${cx('target', sug.up && 'up')}>Meta: ${sug.sets}×${sug.reps}${sug.kg ? ` · ${fmtKg(sug.kg)}` : ''}${sug.up ? ' ⬆ sube peso' : ''}</small>` : html`<small class="muted">Primera vez: anota y la próxima te doy la meta</small>`}
+
+  return html`<section class=${cx('ex-card', complete && 'complete')} style=${`--g:${color}`}>
+    <header class="ex-head">
+      <span class="ex-ic"><${Icon} name="dumbbell" size=${20} /></span>
+      <div class="grow">
+        <b>${ex.name}</b>
+        ${sug
+          ? html`<small class=${cx('target', sug.up && 'up')}>Meta ${sug.sets}×${sug.reps}${sug.kg ? ` · ${fmtKg(sug.kg)}` : ''}${sug.up ? ' · ⬆ sube peso' : ''}</small>`
+          : html`<small class="muted">${group ? `${group} · ` : ''}Primera vez</small>`}
       </div>
-      <button class="icon-btn" onClick=${() => { if (confirm(`¿Quitar ${ex.name} del entreno?`)) edit((d) => { d.exercises = d.exercises.filter((e) => e.id !== ex.id); }); }} aria-label="Quitar ejercicio"><${Icon} name="trash" size=${17} /></button>
+      <span class=${cx('ex-prog', complete && 'ok')} aria-label=${`${doneN} de ${ex.sets.length} series`}>${doneN}/${ex.sets.length}</span>
+      <button class="icon-btn flat" onClick=${() => { if (confirm(`¿Quitar ${ex.name} del entreno?`)) edit((d) => { d.exercises = d.exercises.filter((e) => e.id !== ex.id); }); }} aria-label="Quitar ejercicio"><${Icon} name="trash" size=${17} /></button>
     </header>
-    <div class="sets-head"><span>Serie</span><span>Kg</span><span>Reps</span><span>✓</span></div>
-    ${ex.sets.map((s, i) => html`<div class=${cx('set-row', s.done && 'done')} key=${s.id}>
-      <div class="set-id"><span class="set-n">${i + 1}</span><span class="set-prev">${prev[i] ? `${prev[i].reps}×${prev[i].kg || 'PC'}` : ''}</span></div>
-      <${Stepper} value=${s.kg} onChange=${upd(s.id, 'kg')} step=${2.5} decimal label="Kilos" />
-      <${Stepper} value=${s.reps} onChange=${upd(s.id, 'reps')} step=${1} label="Repeticiones" />
-      <button class=${cx('tick', s.done && 'on')} onClick=${() => toggle(ex.id, s.id)} aria-label=${s.done ? 'Desmarcar serie' : 'Marcar serie hecha'} aria-pressed=${s.done}><${Icon} name="check" size=${18} sw=${3} /></button>
-    </div>`)}
+    <div class="sets">
+      ${ex.sets.map((s, i) => html`<div class=${cx('set-row', s.done && 'done')} key=${s.id}>
+        <div class="set-id"><span class="set-n">${i + 1}</span><span class="set-prev">${prev[i] ? `${prev[i].reps}×${prev[i].kg || 'PC'}` : ''}</span></div>
+        <${NumField} value=${s.kg} onChange=${upd(s.id, 'kg')} step=${2.5} decimal unit="kg" label="Kilos" done=${s.done} />
+        <${NumField} value=${s.reps} onChange=${upd(s.id, 'reps')} step=${1} unit="reps" label="Repeticiones" done=${s.done} />
+        <button class=${cx('tick', s.done && 'on')} onClick=${() => toggle(ex.id, s.id)} aria-label=${s.done ? 'Desmarcar serie' : 'Marcar serie hecha'} aria-pressed=${s.done}><${Icon} name="check" size=${22} sw=${3} /></button>
+      </div>`)}
+    </div>
     <footer>
-      <button class="link" onClick=${() => edit((d) => { const e = d.exercises.find((x) => x.id === ex.id); const l = e.sets.at(-1) || { kg: '', reps: '' }; e.sets.push({ id: uid(), kg: l.kg, reps: l.reps, done: false }); })}>Agregar serie</button>
-      ${ex.sets.length > 1 && html`<button class="link muted" onClick=${() => edit((d) => { d.exercises.find((x) => x.id === ex.id).sets.pop(); })}>− Quitar última</button>`}
+      <button class="add-set" onClick=${() => edit((d) => { const e = d.exercises.find((x) => x.id === ex.id); const l = e.sets.at(-1) || { kg: '', reps: '' }; e.sets.push({ id: uid(), kg: l.kg, reps: l.reps, done: false }); })}><${Icon} name="plus" size=${16} sw=${2.4} /> Agregar serie</button>
+      ${ex.sets.length > 1 && html`<button class="link muted" onClick=${() => edit((d) => { d.exercises.find((x) => x.id === ex.id).sets.pop(); })}>Quitar última</button>`}
     </footer>
   </section>`;
 }

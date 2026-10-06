@@ -4,14 +4,17 @@ import * as L from '../logic.js';
 import { accentVars } from '../theme.js';
 import { Icon, Flame, Avatar, Segmented, Empty, toast, cx } from './kit.js';
 import { ChallengesPanel } from './challenges.js';
+import { RoutinesPanel } from './routines.js';
+import { openScreen, closeScreen } from './nav.js';
 import { Summary } from './progress.js';
 
-/** Todo lo de a dos: retos del día, tablero de motivación y el perfil de mi pareja. */
+/** Todo lo de a dos: retos del día, tablero de motivación y rutinas recomendadas. El perfil de mi pareja se abre desde su foto. */
 export function Together() {
   const partner = S.state.partner;
   const [tab, setTab] = useState(() => (S.challengesForMe().length + S.challengesToReview().length > 0 ? 'challenges' : 'board'));
   const pending = S.challengesForMe().length + S.challengesToReview().length;
   const notes = S.unread();
+  const routines = S.routinesNew().length;
 
   if (!partner) return html`<div class="view-in">
     <header class="top large"><h1>Juntos</h1></header>
@@ -28,15 +31,17 @@ export function Together() {
   </div>`;
 
   return html`<div class="view-in">
-    <header class="top large"><div><h1>Juntos</h1></div><${Avatar} doc=${partner.doc || { name: partner.name }} size=${40} ring /></header>
+    <header class="top large"><div><h1>Juntos</h1></div>
+      <button class="avatar-btn" onClick=${() => openScreen('partner')} aria-label=${`Ver el perfil de ${partner.name}`}><${Avatar} doc=${partner.doc || { name: partner.name }} size=${44} ring /></button>
+    </header>
     <${Segmented} value=${tab} onChange=${setTab} options=${[
       { id: 'challenges', label: 'Retos', badge: pending || null },
       { id: 'board', label: 'Motivación', badge: notes || null },
-      { id: 'profile', label: partner.name.length > 9 ? 'Su perfil' : partner.name },
+      { id: 'routines', label: 'Rutinas', badge: routines || null },
     ]} />
     ${tab === 'challenges' && html`<${ChallengesPanel} />`}
     ${tab === 'board' && html`<${Board} partner=${partner} />`}
-    ${tab === 'profile' && html`<${PartnerProfile} partner=${partner} />`}
+    ${tab === 'routines' && html`<${RoutinesPanel} />`}
   </div>`;
 }
 
@@ -92,7 +97,16 @@ function Note({ n, mine, partner }) {
   </article>`;
 }
 
-// ============ perfil de mi pareja ============
+// ============ perfil de mi pareja (pantalla completa) ============
+export function PartnerScreen() {
+  const partner = S.state.partner;
+  if (!partner) return null;
+  return html`<div class="screen profile">
+    <div class="screen-top"><button class="icon-btn" onClick=${closeScreen} aria-label="Volver"><${Icon} name="left" size=${20} /></button><b>${partner.name}</b><span></span></div>
+    <div class="screen-body"><${PartnerProfile} partner=${partner} /></div>
+  </div>`;
+}
+
 function PartnerProfile({ partner }) {
   const d = partner.doc;
   const me = S.state.me;

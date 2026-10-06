@@ -84,7 +84,7 @@ function WorkoutHero({ me }) {
     </button>
     ${(me.routines.length > 0 || last) && html`<div class="chips quick-start">
       ${last && html`<button class="chip" onClick=${() => beginWorkout(last.exercises.map((e) => e.name))}><${Icon} name="repeat" size=${14} /> Repetir el último</button>`}
-      ${me.routines.slice(0, 4).map((r) => html`<button class="chip" onClick=${() => beginWorkout(r.exercises)}>${r.name}</button>`)}
+      ${me.routines.slice(0, 4).map((r) => html`<button class="chip" onClick=${() => beginWorkout(L.routineItems(r))}>${r.name}</button>`)}
     </div>`}
   </div>`;
 }
@@ -107,11 +107,13 @@ const nextReward = (bal) => {
 function Banners() {
   const notes = S.state.messages.filter((m) => m.from !== S.state.auth.uid && m.kind !== 'reaction' && m.ts > S.state.seenAt);
   const pending = S.pendingForMe().length;
+  const newRoutines = S.routinesNew();
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) && !navigator.standalone && !matchMedia('(display-mode: standalone)').matches;
   const [hideIos, setHideIos] = useState(() => { try { return !!localStorage.getItem('lindwyrm.iosTip'); } catch { return false; } });
-  if (!notes.length && !pending && (!ios || hideIos)) return null;
+  if (!notes.length && !pending && !newRoutines.length && (!ios || hideIos)) return null;
   return html`<div class="group banners rise">
     ${notes.length > 0 && html`<div class="row" role="button" onClick=${() => goTab('together')}><span class="lead tint-rose">💌</span><div class="grow"><b>Nota de ${S.state.partner?.name}</b><small class="muted">${notes.at(-1).text}</small></div><${Icon} name="right" size=${16} class="chev" /></div>`}
+    ${newRoutines.length > 0 && html`<div class="row" role="button" onClick=${() => goTab('together')}><span class="lead tint-rose">🏋️</span><div class="grow"><b>${S.state.partner?.name} te recomendó una rutina</b><small class="muted">${newRoutines[0].name}</small></div><${Icon} name="right" size=${16} class="chev" /></div>`}
     ${pending > 0 && html`<div class="row" role="button" onClick=${() => goTab('rewards')}><span class="lead tint-rose">🎁</span><div class="grow"><b>${pending} idea${pending > 1 ? 's' : ''} por decidir</b><small class="muted">Tu pareja propuso un premio</small></div><${Icon} name="right" size=${16} class="chev" /></div>`}
     ${ios && !hideIos && html`<div class="row static"><span class="lead">📲</span><div class="grow"><b>Instálala como app</b><small class="muted">Safari → Compartir → Agregar a pantalla de inicio</small></div><button class="icon-btn flat" onClick=${() => { try { localStorage.setItem('lindwyrm.iosTip', '1'); } catch {} setHideIos(true); }} aria-label="Cerrar"><${Icon} name="x" size=${16} /></button></div>`}
   </div>`;

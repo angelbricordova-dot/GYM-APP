@@ -1,7 +1,7 @@
 // Estado de la app. Local primero: todo se guarda en el teléfono al instante y se sincroniza en segundo plano.
 // Tu documento solo lo escribes tú; el de tu pareja llega de solo lectura.
 import * as L from './logic.js';
-import { cachePhoto, getPhoto, photoUrl } from './photos.js';
+import { cachePhoto, getPhoto, photoUrl, clearAllPhotos } from './photos.js';
 
 const KEY = 'gymduo.v2';
 
@@ -9,7 +9,7 @@ const fresh = () => ({
   auth: null, // { token, uid }
   me: null,
   partner: null, // { id, name, doc, updatedAt }
-  proposals: [], vouchers: [], messages: [], challenges: [],
+  proposals: [], vouchers: [], messages: [], challenges: [], routines: [],
   account: null, // { google, email, hasPin }
   invite: null,
   seenAt: 0,
@@ -58,6 +58,8 @@ async function call(method, path, body, { raw, type } = {}) {
   }
 }
 
+export const request = call; // para módulos que hablan con la API (push)
+
 const download = async (path) => {
   try {
     const res = await fetch(`/api${path}`, { headers: { authorization: `Bearer ${state.auth.token}` } });
@@ -103,6 +105,9 @@ export async function syncNow() {
   net.syncing = true;
   emit();
   try {
+    // 0) mi zona horaria (el recordatorio diario se manda a tu hora local)
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (state.me && tz && state.me.tz !== tz) { state.me.tz = tz; state.me.updatedAt = Math.max(Date.now(), state.me.updatedAt + 1); state.dirty = true; }
     // 1) subir mis cambios
     if (state.dirty && state.me) {
       const res = await call('PUT', '/me', { doc: state.me });
@@ -129,9 +134,9 @@ export async function syncNow() {
     if (res.ok) {
       const d = res.data;
       if (d.me && !state.dirty) { state.me = d.me; state.meSyncedAt = d.me.updatedAt; }
-      if (d.partner) state.partner = { id: d.partner.id, name: d.partner.name, updatedAt: d.partner.updatedAt, doc: d.partner.doc || state.partner?.doc || null };
+      state.partner = d.partner ? { id: d.partner.id, name: d.partner.name, updatedAt: d.partner.updatedAt, doc: d.partner.doc || state.partner?.doc || null } : null;
       state.invite = d.inviteCode;
-      state.proposals = d.proposals; state.vouchers = d.vouchers; state.messages = d.messages; state.challenges = d.challenges || [];
+      state.proposals = d.proposals; state.vouchers = d.vouchers; state.messages = d.messages; state.challenges = d.challenges || []; state.routines = d.routines || [];
       state.account = d.account || null;
       reconcilePoints();
       net.error = null;
@@ -154,7 +159,8 @@ export function startSyncLoop() {
 }
 
 // ---------- mutaciones de mi documento ----------
-const approvedForMe = () => state.challenges.filter((c) => c.status === 'approved' && c.to === state.me?.id);
+// Tras “reiniciar de cero” solo cuentan los retos aprobados DESPUÉS del reinicio.
+const approvedForMe = () => state.challenges.filter((c) => c.status === 'approved' && c.to === state.me?.id && (c.approvedAt || 0) > (state.me?.resetAt || 0));
 
 /** Los retos aprobados por mi pareja se convierten en puntos de amor en MI documento (cada quien escribe solo el suyo). */
 function reconcilePoints() {
@@ -282,4 +288,41 @@ export const pendingForMe = () => state.proposals.filter((p) => p.status === 'pe
 
 export function exportJSON() {
   return JSON.stringify({ exportedAt: new Date().toISOString(), me: state.me, partner: state.partner?.doc }, null, 2);
+}
+
+// ---------- rutinas compartidas ----------
+export const shareRoutine = (r) => act('POST', '/routines', r);
+export const routineAction = (id, action) => act('POST', `/routines/${id}/${action}`);
+/** Las rutinas que mi pareja me recomendó (sin las que descarté). */
+export const routinesForMe = () => state.routines.filter((r) => r.to === uid() && r.status !== 'dismissed');
+export const routinesNew = () => state.routines.filter((r) => r.to === uid() && r.status === 'new');
+
+export async function saveSharedRoutine(r) {
+  const res = await routineAction(r.id, 'save');
+  if (res.ok) saveRoutine({ id: L.uid(), name: r.name, exercises: r.exercises.map((e) => ({ ...e })) });
+  return res;
+}
+
+// ---------- reiniciar y eliminar ----------
+/** Borra TODO mi progreso (entrenos, fotos, peso, puntos, rutinas, racha). Conserva la cuenta y los ajustes. */
+export async function resetProgress() {
+  const res = await call('POST', '/me/reset');
+  if (!res.ok) return res;
+  await clearAllPhotos();
+  state.me = res.data.doc;
+  state.meSyncedAt = res.data.doc.updatedAt;
+  state.dirty = false;
+  state.draft = null;
+  commit();
+  await syncNow();
+  return res;
+}
+
+/** Elimina mi usuario y todo lo que creé. Cierra la sesión. */
+export async function deleteAccount() {
+  const res = await call('POST', '/me/delete');
+  if (!res.ok) return res;
+  await clearAllPhotos();
+  logout();
+  return res;
 }

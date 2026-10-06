@@ -1,6 +1,7 @@
 // Fotos: se guardan primero en el teléfono (IndexedDB) y se suben cuando hay señal.
 // En el gimnasio casi nunca hay buena cobertura, así que el check-in nunca depende de la red.
 
+const urls = new Map();
 const DB = 'gymduo-photos';
 const STORE = 'photos';
 
@@ -27,6 +28,7 @@ async function run(mode, fn) {
 }
 
 export const putPhoto = (id, blob) => run('readwrite', (s) => s.put(blob, id));
+export const clearAllPhotos = () => { urls.clear(); return run('readwrite', (s) => s.clear()); };
 export const getPhoto = (id) => run('readonly', (s) => s.get(id));
 
 /** Reduce una imagen a JPEG (lado mayor `max`) respetando la orientación del teléfono. */
@@ -62,8 +64,6 @@ export const toDataURL = (blob) =>
     r.onerror = rej;
     r.readAsDataURL(blob);
   });
-
-const urls = new Map();
 
 /** URL local (blob:) de una foto: primero el caché del teléfono, si no se descarga de la nube. */
 export function photoUrl(uid, pid, download) {
