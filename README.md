@@ -44,8 +44,12 @@ tools/make-icons.mjs      genera los iconos
    - `SETUP_CODE` — **recomendado**: una palabra secreta. Sin ella, cualquiera que encuentre la URL antes que ustedes podría crear el espacio.
    - `GOOGLE_CLIENT_ID` — solo si quieren entrar con Google (ver abajo).
    - `VAPID_SUBJECT` — opcional (`mailto:tu@correo.com`). Por defecto se usa la URL del sitio.
-4. Abre la URL en el celular de la primera persona → **Crear nuestro espacio**. Te muestra un **código de invitación**;
-   tu pareja abre la misma URL → **Unirme con código**. Cuando se unen los dos, el espacio queda cerrado.
+4. Abre la URL en el celular de la primera persona → **Crear nuestro espacio**. Te muestra un **enlace de invitación**
+   (botón *Compartir enlace*). Tu pareja lo abre y llega a la pantalla **Únete** con el código ya escrito; después de crear su perfil
+   le aparece una pregunta de amor y, para unirse, debe escribir **“acepto mi amor te amo mucho”**. Esa aceptación queda como la
+   primera nota del tablero de motivación. Cuando se unen los dos, el espacio queda cerrado.
+   - Los códigos no usan caracteres que se confundan (sin S/5, Z/2, B/8, O/0, I/1) y los códigos viejos también aceptan esas parejas.
+   - 8 códigos incorrectos seguidos bloquean 10 minutos. El texto de la pregunta está en `app/js/ui/auth.js` y la frase en `PACT_PHRASE` (`app/js/logic.js`).
 5. **iPhone**: abre la URL en **Safari** → Compartir → **Agregar a pantalla de inicio**.
 
 > No hace falta ninguna cuenta externa para lo básico: los datos viven en Netlify Blobs del propio sitio.

@@ -16,7 +16,6 @@ const MAX_DOC = 1_500_000;
 const MAX_PHOTO = 3_000_000;
 const MAX_EVIDENCE = 5_000_000;
 const EVIDENCE_TYPES = ['video/mp4', 'video/webm', 'video/quicktime', 'image/jpeg'];
-const INVITE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 const json = (status, body, headers = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store', ...headers } });
@@ -125,7 +124,7 @@ async function setup(body, google) {
   const name = clean(body.name || google?.name, 20);
   const bad = google ? (name ? null : 'Escribe tu nombre.') : validCreds(body.name, body.pin);
   if (bad) return fail(400, bad);
-  const invite = Array.from(randomBytes(6), (b) => INVITE_ALPHABET[b % INVITE_ALPHABET.length]).join('');
+  const invite = newInviteCode();
   await db.set('meta', { secret: randomBytes(32).toString('base64'), inviteCode: invite, users: [], createdAt: Date.now() });
   const user = await createUser({ name, pin: google ? null : String(body.pin), color: '#34d6a0', google });
   const meta = await db.get('meta');
@@ -134,20 +133,51 @@ async function setup(body, google) {
   return json(200, { token: await sign(user.id), uid: user.id, inviteCode: invite });
 }
 
-async function join(body, google) {
-  const meta = await db.get('meta');
+const newInviteCode = () => Array.from(randomBytes(6), (b) => L.INVITE_ALPHABET[b % L.INVITE_ALPHABET.length]).join('');
+
+/** Valida un código de invitación con freno anti-adivinanza (8 fallos → 10 minutos de espera). Devuelve una respuesta de error o null. */
+async function checkInvite(meta, code) {
   if (!meta) return fail(404, 'Aún no existe el espacio. Que la primera persona lo cree.');
   if (meta.users.length >= 2) return fail(409, 'Este espacio ya tiene a sus dos personas.');
-  if (clean(body.inviteCode, 12).toUpperCase() !== meta.inviteCode) return fail(403, 'Código de invitación incorrecto.');
+  const f = meta.inviteFails || { n: 0, until: 0 };
+  if (f.until > Date.now()) return fail(429, 'Demasiados intentos con el código. Espera unos minutos.');
+  if (L.canonInvite(code) !== L.canonInvite(meta.inviteCode)) {
+    f.n += 1;
+    if (f.n >= 8) { f.until = Date.now() + 10 * 60_000; f.n = 0; }
+    meta.inviteFails = f;
+    await db.set('meta', meta);
+    return fail(403, 'Código de invitación incorrecto.');
+  }
+  if (f.n) { meta.inviteFails = { n: 0, until: 0 }; await db.set('meta', meta); }
+  return null;
+}
+
+/** Comprueba un código sin gastar el espacio y devuelve el nombre de quien invita (para el mensaje de bienvenida). */
+async function inviteInfo(url) {
+  const meta = await db.get('meta');
+  const badCode = await checkInvite(meta, url.searchParams.get('code'));
+  if (badCode) return badCode;
+  return json(200, { ok: true, inviter: (await db.get(`user/${meta.users[0]}`)).name });
+}
+
+async function join(body, google) {
+  const meta = await db.get('meta');
+  const badCode = await checkInvite(meta, body.inviteCode);
+  if (badCode) return badCode;
+  if (!L.pactOk(body.pact)) return fail(400, `Para unirte escribe: “${L.PACT_PHRASE}”.`);
   const name = clean(body.name || google?.name, 20);
   const bad = google ? (name ? null : 'Escribe tu nombre.') : validCreds(body.name, body.pin);
   if (bad) return fail(400, bad);
-  const first = await db.get(`user/${meta.users[0]}`);
-  if (norm(first.name) === norm(name)) return fail(409, 'Ese nombre ya está en uso; usa otro.');
-  if (google && first.googleSub === google.sub) return fail(409, 'Esa cuenta de Google ya está en uso por tu pareja.');
+  const inviter = await db.get(`user/${meta.users[0]}`);
+  if (norm(inviter.name) === norm(name)) return fail(409, 'Ese nombre ya está en uso; usa otro.');
+  if (google && inviter.googleSub === google.sub) return fail(409, 'Esa cuenta de Google ya está en uso por tu pareja.');
   const user = await createUser({ name, pin: google ? null : String(body.pin), color: '#ff5c93', google });
   meta.users.push(user.id);
   await db.set('meta', meta);
+  // Primera nota del tablero: la aceptación. Queda como recuerdo para los dos.
+  const note = { id: randomUUID(), from: user.id, text: 'Acepto, mi amor. Te amo mucho 💗', kind: 'text', ref: null, likes: [], ts: Date.now() };
+  await db.set(`message/${String(note.ts).padStart(13, '0')}-${note.id}`, note);
+  await push.notify(meta.users[0], { type: 'notes', title: `💌 ${first(name)} aceptó unirse`, body: note.text, url: '/?tab=together' });
   return json(200, { token: await sign(user.id), uid: user.id });
 }
 
@@ -499,7 +529,7 @@ async function deleteMe(user) {
   await db.del(`user/${user.id}`);
   meta.users = meta.users.filter((id) => id !== user.id);
   if (!meta.users.length) await db.del('meta');
-  else { meta.inviteCode = Array.from(randomBytes(6), (b) => INVITE_ALPHABET[b % INVITE_ALPHABET.length]).join(''); await db.set('meta', meta); }
+  else { meta.inviteCode = newInviteCode(); await db.set('meta', meta); }
   return json(200, { ok: true });
 }
 
@@ -525,6 +555,7 @@ export default async function handler(req) {
     const body = async () => (await req.json().catch(() => ({})));
 
     if (m === 'GET' && path === '/status') return await status();
+    if (m === 'GET' && path === '/invite') return await inviteInfo(url);
     if (m === 'POST' && path === '/setup') return await setup(await body());
     if (m === 'POST' && path === '/join') return await join(await body());
     if (m === 'POST' && path === '/auth/google') return await googleAuth(await body());

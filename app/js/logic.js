@@ -27,6 +27,17 @@ export const num = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+// ---------- invitación a la pareja ----------
+/** Letras y números que NO se confunden al leerlos o escribirlos (sin S/5, Z/2, B/8, O/0, I/1). */
+export const INVITE_ALPHABET = 'ACDEFGHJKLMNPQRTUVWXY34679';
+/** Forma canónica de un código: mayúsculas y las parejas confusas unificadas. Así los códigos viejos y los errores de lectura (S↔5, Z↔2, B↔8, O↔0, I↔1) también sirven. */
+export const canonInvite = (c) => String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/[S5]/g, '5').replace(/[Z2]/g, '2').replace(/[B8]/g, '8').replace(/O/g, '0').replace(/[I1]/g, '1');
+
+/** La frase que tiene que escribir quien se une para aceptar. Se compara sin acentos, mayúsculas ni signos. */
+export const PACT_PHRASE = 'acepto mi amor te amo mucho';
+export const normalizePhrase = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+export const pactOk = (s) => normalizePhrase(s) === normalizePhrase(PACT_PHRASE);
+
 // ---------- constantes de juego ----------
 export const EARN = { checkin: 10, pr: 5, week: 20 };
 export const MILESTONES = { 3: 10, 7: 25, 14: 40, 30: 100, 60: 150, 100: 250 };

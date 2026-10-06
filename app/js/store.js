@@ -12,6 +12,7 @@ const fresh = () => ({
   proposals: [], vouchers: [], messages: [], challenges: [], routines: [],
   account: null, // { google, email, hasPin }
   invite: null,
+  pendingInvite: null, // código que llegó por enlace (?join=CODIGO) antes de tener cuenta
   seenAt: 0,
   draft: null, // entreno en curso (no se sincroniza)
   meSyncedAt: 0,
@@ -70,6 +71,8 @@ export const loadPhoto = (uid, pid) => photoUrl(uid, pid, download);
 
 // ---------- cuenta ----------
 export const getStatus = () => call('GET', '/status');
+export const checkInvite = (code) => call('GET', `/invite?code=${encodeURIComponent(code)}`);
+export const setPendingInvite = (code) => { state.pendingInvite = code; save(); };
 
 async function startSession(res) {
   if (!res.ok) return res;

@@ -5,6 +5,7 @@ import { accentVars } from '../theme.js';
 import { Icon, Flame, Avatar, Segmented, Empty, toast, cx } from './kit.js';
 import { ChallengesPanel } from './challenges.js';
 import { RoutinesPanel } from './routines.js';
+import { shareInvite, copyInvite } from '../invite.js';
 import { openScreen, closeScreen } from './nav.js';
 import { Summary } from './progress.js';
 
@@ -21,11 +22,11 @@ export function Together() {
     <section class="card center rise">
       <div class="empty-ic">💌</div>
       <h2>Aún no se une</h2>
-      <p class="muted">Pásale este código para que cree su perfil. Cuando entre, podrán verse el progreso, retarse y mandarse notas.</p>
+      <p class="muted">Mándale el enlace: se abre la pantalla “Únete” con el código ya escrito y ella o él solo tiene que aceptar. Cuando entre, podrán verse el progreso, retarse y mandarse notas.</p>
       <div class="invite-code">${(S.state.invite || '······').split('').map((c) => html`<span>${c}</span>`)}</div>
       <div class="row-btns">
-        <button class="btn tinted" onClick=${() => { navigator.clipboard?.writeText(S.state.invite || ''); toast('Código copiado', { icon: '📋' }); }}><${Icon} name="copy" size=${16} /> Copiar</button>
-        ${navigator.share && html`<button class="btn tinted" onClick=${() => navigator.share({ text: `Únete a nuestro Lindwyrm con el código ${S.state.invite}` }).catch(() => {})}><${Icon} name="send" size=${16} /> Compartir</button>`}
+        <button class="btn primary" onClick=${() => shareInvite(S.state.invite, S.state.me?.name)}><${Icon} name="send" size=${16} /> Compartir enlace</button>
+        <button class="btn tinted" onClick=${() => copyInvite(S.state.invite)}><${Icon} name="copy" size=${16} /> Copiar</button>
       </div>
     </section>
   </div>`;

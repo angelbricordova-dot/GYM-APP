@@ -5,6 +5,13 @@ import { goTab } from './ui/nav.js';
 
 const TABS = ['today', 'train', 'progress', 'together', 'rewards'];
 
+// Enlace de invitación (?join=CODIGO): se guarda el código y la pantalla de acceso abre “Únete” con él escrito.
+const joinCode = new URL(location.href).searchParams.get('join');
+if (joinCode) {
+  if (!S.state.auth) S.setPendingInvite(joinCode.toUpperCase().slice(0, 12));
+  history.replaceState(null, '', '/');
+}
+
 render(html`<${App} />`, document.getElementById('root'));
 S.startSyncLoop(); // sin sesión no hace nada; al iniciar sesión ya está activo
 

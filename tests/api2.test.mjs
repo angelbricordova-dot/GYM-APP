@@ -42,7 +42,7 @@ test('Google: crear el espacio y unirse sin PIN, y entrar de nuevo con Google', 
   const s = await call('POST', '/auth/google', { body: { credential: idToken({ sub: 'g-ang', given_name: 'Ángel', email: 'a@x.com' }), mode: 'setup' } });
   assert.equal(s.status, 200);
   A = s.data; invite = s.data.inviteCode;
-  const j = await call('POST', '/auth/google', { body: { credential: idToken({ sub: 'g-ange', given_name: 'Angélica' }), mode: 'join', inviteCode: invite } });
+  const j = await call('POST', '/auth/google', { body: { credential: idToken({ sub: 'g-ange', given_name: 'Angélica' }), mode: 'join', inviteCode: invite, pact: 'acepto mi amor te amo mucho' } });
   assert.equal(j.status, 200);
   B = j.data;
 

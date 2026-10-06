@@ -5,6 +5,7 @@ import { Icon, Flame, Avatar, Heart, Points, CountUp, toast, cx, fmtKg, fmtShort
 import { openScreen, goTab } from './nav.js';
 import { beginWorkout } from './workout.js';
 import { ChallengeCard, NewChallengeSheet } from './challenges.js';
+import { shareInvite, copyInvite } from '../invite.js';
 
 export function Today() {
   const me = S.state.me;
@@ -124,9 +125,12 @@ function PartnerCard({ partner }) {
   if (!partner) {
     return html`<section class="card rise invite" style="--i:3">
       <h2>Invita a tu pareja</h2>
-      <p class="muted small">Todavía no se une. Pásale este código:</p>
+      <p class="muted small">Todavía no se une. Mándale el enlace: abre “Únete” con el código ya escrito.</p>
       <div class="invite-code sm">${(S.state.invite || '······').split('').map((c) => html`<span>${c}</span>`)}</div>
-      <button class="btn tinted block" onClick=${() => { navigator.clipboard?.writeText(S.state.invite || ''); toast('Código copiado', { icon: '📋' }); }}><${Icon} name="copy" size=${16} /> Copiar código</button>
+      <div class="pc-actions">
+        <button class="btn primary sm" onClick=${() => shareInvite(S.state.invite, S.state.me?.name)}><${Icon} name="send" size=${15} /> Compartir enlace</button>
+        <button class="btn tinted sm" onClick=${() => copyInvite(S.state.invite)}><${Icon} name="copy" size=${15} /> Copiar</button>
+      </div>
     </section>`;
   }
   const d = partner.doc;

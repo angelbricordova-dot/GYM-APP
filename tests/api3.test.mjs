@@ -34,7 +34,7 @@ const saveDoc = async (t, patch) => { const d = await docOf(t); const r = await 
 test('preparación: dos personas', async () => {
   A = (await call('POST', '/setup', { body: { name: 'Ángel', pin: '1234' } })).data;
   invite = A.inviteCode;
-  B = (await call('POST', '/join', { body: { name: 'Angélica', pin: '4321', inviteCode: invite } })).data;
+  B = (await call('POST', '/join', { body: { name: 'Angélica', pin: '4321', inviteCode: invite, pact: 'acepto mi amor te amo mucho' } })).data;
   assert.ok(A.token && B.token);
 });
 
@@ -160,8 +160,8 @@ test('eliminar cuenta: borra lo suyo, deja libre al otro y regenera el código',
   assert.ok(s.inviteCode && s.inviteCode !== invite); // código nuevo: el viejo ya no sirve
   assert.equal(s.messages.some((m) => m.text === 'adiós'), false);
   assert.equal(s.challenges.length, 0);
-  assert.equal((await call('POST', '/join', { body: { name: 'Nueva', pin: '1111', inviteCode: invite } })).status, 403);
-  assert.equal((await call('POST', '/join', { body: { name: 'Nueva', pin: '1111', inviteCode: s.inviteCode } })).status, 200);
+  assert.equal((await call('POST', '/join', { body: { name: 'Nueva', pin: '1111', inviteCode: invite, pact: 'acepto mi amor te amo mucho' } })).status, 403);
+  assert.equal((await call('POST', '/join', { body: { name: 'Nueva', pin: '1111', inviteCode: s.inviteCode, pact: 'acepto mi amor te amo mucho' } })).status, 200);
 });
 
 test('eliminar a la última persona libera el espacio para crearlo de nuevo', async () => {

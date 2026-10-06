@@ -25,12 +25,12 @@ test('crear espacio, unirse con código y límite de 2 personas', async () => {
   assert.equal(s.status, 200);
   A = s.data; invite = s.data.inviteCode;
   assert.equal((await call('POST', '/setup', { body: { name: 'X', pin: '1234' } })).status, 409);
-  assert.equal((await call('POST', '/join', { body: { name: 'Angélica', pin: '4321', inviteCode: 'NOPE' } })).status, 403);
-  assert.equal((await call('POST', '/join', { body: { name: 'ángel', pin: '4321', inviteCode: invite } })).status, 409);
-  const j = await call('POST', '/join', { body: { name: 'Angélica', pin: '4321', inviteCode: invite.toLowerCase() } });
+  assert.equal((await call('POST', '/join', { body: { name: 'Angélica', pin: '4321', inviteCode: 'NOPE', pact: 'acepto mi amor te amo mucho' } })).status, 403);
+  assert.equal((await call('POST', '/join', { body: { name: 'ángel', pin: '4321', inviteCode: invite, pact: 'acepto mi amor te amo mucho' } })).status, 409);
+  const j = await call('POST', '/join', { body: { name: 'Angélica', pin: '4321', inviteCode: invite.toLowerCase(), pact: 'Acepto mi amor, te amo mucho' } });
   assert.equal(j.status, 200);
   B = j.data;
-  assert.equal((await call('POST', '/join', { body: { name: 'Otra', pin: '1111', inviteCode: invite } })).status, 409);
+  assert.equal((await call('POST', '/join', { body: { name: 'Otra', pin: '1111', inviteCode: invite, pact: 'acepto mi amor te amo mucho' } })).status, 409);
 });
 
 test('login, PIN incorrecto y bloqueo tras 5 intentos', async () => {

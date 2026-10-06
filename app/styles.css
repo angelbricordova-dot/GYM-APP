@@ -657,6 +657,22 @@ details.card[open] summary { margin-bottom: 8px; }
 .btn.danger-fill { background: var(--bad); color: var(--on-bad); }
 .btn.danger-fill[disabled] { opacity: .35; }
 
+/* ---------- invitación y promesa ---------- */
+.invited { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: var(--r); background: color-mix(in srgb, var(--love) 14%, var(--s1)); }
+.invited > span { font-size: 28px; }
+.invited small { display: block; color: var(--text2); }
+.pact { display: flex; flex-direction: column; gap: 14px; text-align: center; align-items: stretch; }
+.pact h1 { font-size: 28px; }
+.pact-heart { color: var(--love); display: grid; place-items: center; animation: beat 1.6s ease-in-out infinite; }
+.pact-card { text-align: left; background: var(--s1); border-radius: 24px; padding: 20px; box-shadow: var(--shadow); }
+.pact-card p { margin: 0 0 12px; font-size: 17px; line-height: 1.45; }
+.pact-card p:last-child { margin-bottom: 0; }
+.pact-q { font-size: 20px !important; font-weight: 650; letter-spacing: -.015em; line-height: 1.25 !important; }
+.pact-sign { color: var(--love); font-weight: 600; text-align: right; }
+.pact-phrase { padding: 14px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--love) 12%, transparent); color: var(--love); font-weight: 650; font-size: 18px; text-align: center; }
+.pact .field { text-align: center; }
+.btn.ready { animation: pop 420ms var(--spring); }
+
 /* ---------- accesibilidad ---------- */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
