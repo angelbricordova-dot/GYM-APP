@@ -20,6 +20,7 @@ export function SkipSheet({ onClose }) {
   };
   return html`<${Sheet} title="Hoy no fui" onClose=${onClose}>
     <div class="skip-warn"><span>😔</span><p><b>Esto cuesta puntos de amor.</b> ${partner} lee tu razón y decide cuántos te quita, de ${L.PENALTY.min} a ${L.PENALTY.max}. Si al final sí entrenas hoy, no se te quita nada.</p></div>
+    ${!S.state.partner && html`<p class="muted small">Tu pareja aún no se une: queda guardado y, cuando entre, ella o él lo lee y decide cuántos puntos te quita.</p>`}
     <div class="chips">${REASONS.map((r) => html`<button class=${cx('chip pick', reason === r && 'on')} onClick=${() => setReason(r)}>${r}</button>`)}</div>
     <${Field} label="La razón (sé sincero)"><input value=${reason} onInput=${(e) => setReason(e.target.value)} maxlength="140" placeholder="No fui porque…" /><//>
     <button class="btn bad block lg" disabled=${!reason.trim() || busy} onClick=${send}><${Icon} name="send" size=${18} /> ${busy ? 'Enviando…' : `Avisar a ${partner}`}</button>

@@ -43,7 +43,7 @@ export function Today() {
         : !me.checkins[L.ymd()] && html`<button class="btn tinted block" onClick=${() => openScreen('checkin')}><${Icon} name="camera" size=${18} /> Ya entrené: tomar mi foto</button>`}
       ${me.checkins[L.ymd()] && html`<p class="muted small center done-line">✅ Hoy ya cuenta · ${me.checkins[L.ymd()].time} h${me.checkins[L.ymd()].photo ? '' : ' · sin foto'}</p>`}
       ${L.skipToday(me) && !me.checkins[L.ymd()] && html`<${SkipStatus} skip=${L.skipToday(me)} />`}
-      ${!me.checkins[L.ymd()] && !L.skipToday(me) && !info.paused && S.state.partner && html`<button class="btn bad block" onClick=${() => setSkip(true)}><${Icon} name="x" size=${18} sw=${2.8} /> Hoy no fui al gym</button>`}
+      ${!me.checkins[L.ymd()] && !L.skipToday(me) && !info.paused && html`<button class="btn bad block" onClick=${() => setSkip(true)}><${Icon} name="x" size=${18} sw=${2.8} /> Hoy no fui al gym</button>`}
     </section>
 
     <${PartnerCard} partner=${partner} />
@@ -62,8 +62,8 @@ export function Today() {
 
 function SkipStatus({ skip }) {
   const pts = S.skipPenalties()[L.ymd()];
-  const name = S.state.partner?.name || 'Tu pareja';
-  return html`<div class="skip-status"><b>😔 Hoy no fui</b><small>“${skip.reason}”</small><span>${pts ? `${name} te quitó ${pts} puntos de amor. Entrenar hoy los devuelve.` : `Esperando a que ${name} decida cuántos puntos te quita.`}</span></div>`;
+  const name = S.state.partner?.name || 'tu pareja';
+  return html`<div class="skip-status"><b>😔 Hoy no fui</b><small>“${skip.reason}”</small><span>${pts ? `${name[0].toUpperCase() + name.slice(1)} te quitó ${pts} puntos de amor. Entrenar hoy los devuelve.` : `Esperando a que ${name} decida cuántos puntos te quita.`}</span></div>`;
 }
 
 function Header({ me }) {
