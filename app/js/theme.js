@@ -58,39 +58,50 @@ export const haptic = (ms = 10) => { try { navigator.vibrate?.(ms); } catch { /*
 export const soundOn = () => { try { return localStorage.getItem('lindwyrm.sound') !== '0'; } catch { return true; } };
 export const setSoundOn = (on) => { try { localStorage.setItem('lindwyrm.sound', on ? '1' : '0'); } catch { /* sin storage */ } };
 let audio = null;
-/** Avisito corto cuando llega algo de tu pareja con la app abierta. */
+/**
+ * Sonido de “me gusta”: una campanita suave y cálida (estilo confirmación de la App Store), no un bip de videojuego.
+ * Dos notas de “vidrio” (sol y re agudos) hechas con parciales de campana que se apagan despacio, un filtro que quita lo áspero y un eco corto.
+ * `out` es el destino (en pruebas, un contexto sin conexión).
+ */
+export function likeSound(ctx, out, t0, notes = [[784, 0, 0.17, 1.1], [1174.7, 0.085, 0.14, 1.4]]) {
+  const tone = ctx.createGain();
+  tone.gain.value = 0.9;
+  const soften = ctx.createBiquadFilter();
+  soften.type = 'lowpass'; soften.frequency.value = 5200; soften.Q.value = 0.4;
+  const echo = ctx.createDelay(0.5), fb = ctx.createGain(), wet = ctx.createGain();
+  echo.delayTime.value = 0.11; fb.gain.value = 0.3; wet.gain.value = 0.22;
+  tone.connect(soften); soften.connect(out);
+  soften.connect(echo); echo.connect(fb); fb.connect(echo); echo.connect(wet); wet.connect(out);
+  // campana: fundamental + parciales (2.0, 3.0, 4.2) que decaen más rápido cuanto más agudos
+  const bell = (freq, at, vol, decay) => {
+    for (const [mult, amp, dec] of [[1, 1, 1], [2, 0.32, 0.6], [3, 0.12, 0.4], [4.2, 0.05, 0.25]]) {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.setValueAtTime(freq * mult, t0 + at);
+      g.gain.setValueAtTime(0.0001, t0 + at);
+      g.gain.exponentialRampToValueAtTime(vol * amp, t0 + at + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + decay * dec);
+      o.connect(g); g.connect(tone);
+      o.start(t0 + at); o.stop(t0 + at + decay * dec + 0.05);
+    }
+  };
+  for (const [freq, at, vol, decay] of notes) bell(freq, at, vol, decay); // por defecto: sol y re (quinta arriba), el “ting” que sube
+}
+
+/** Avisito de “llegó algo de tu pareja” con la app abierta: una sola campanita, más suave que el like. */
 export function playPing() {
   if (!soundOn()) return;
   try {
     audio = audio || new (window.AudioContext || window.webkitAudioContext)();
     if (audio.state === 'suspended') audio.resume();
-    const t0 = audio.currentTime + 0.01;
-    for (const [f, at] of [[988, 0], [1318, 0.12]]) {
-      const o = audio.createOscillator(), g = audio.createGain();
-      o.type = 'sine'; o.frequency.setValueAtTime(f, t0 + at);
-      g.gain.setValueAtTime(0.0001, t0 + at); g.gain.exponentialRampToValueAtTime(0.12, t0 + at + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.28);
-      o.connect(g).connect(audio.destination); o.start(t0 + at); o.stop(t0 + at + 0.32);
-    }
+    likeSound(audio, audio.destination, audio.currentTime + 0.01, [[1318.5, 0, 0.11, 0.9]]);
   } catch { /* sin audio */ }
 }
-/** Sonidito de “me gusta”: dos notas suaves que suben, con un brillo al final. Se llama desde un toque (iOS lo exige). */
+
 export function playLike() {
   if (!soundOn()) return;
   try {
     audio = audio || new (window.AudioContext || window.webkitAudioContext)();
     if (audio.state === 'suspended') audio.resume();
-    const t0 = audio.currentTime + 0.01;
-    const note = (freq, at, dur, vol, type = 'sine') => {
-      const o = audio.createOscillator(), g = audio.createGain();
-      o.type = type; o.frequency.setValueAtTime(freq, t0 + at);
-      g.gain.setValueAtTime(0.0001, t0 + at);
-      g.gain.exponentialRampToValueAtTime(vol, t0 + at + 0.015);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
-      o.connect(g).connect(audio.destination);
-      o.start(t0 + at); o.stop(t0 + at + dur + 0.05);
-    };
-    note(784, 0, 0.32, 0.16);          // sol
-    note(1175, 0.11, 0.42, 0.15);      // re agudo
-    note(1568, 0.2, 0.55, 0.07, 'triangle'); // brillo
+    likeSound(audio, audio.destination, audio.currentTime + 0.01);
   } catch { /* sin audio */ }
 }
