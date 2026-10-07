@@ -7,6 +7,24 @@ import { num, parseYmd } from '../logic.js';
 export const fmtDay = (s) => parseYmd(s).toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' }).replace('.', '');
 export const fmtShort = (s) => parseYmd(s).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }).replace('.', '');
 export const fmtLong = (s) => parseYmd(s).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
+/** “ahora”, “hace 5 min”, “hoy 18:40”, “ayer 18:40”, “6 oct · 18:40”. */
+export function relTime(ts) {
+  const diff = Date.now() - ts;
+  if (diff < 60e3) return 'ahora';
+  if (diff < 3600e3) return `hace ${Math.floor(diff / 60e3)} min`;
+  const t = new Date(ts), n = new Date();
+  const hm = t.toTimeString().slice(0, 5);
+  if (t.toDateString() === n.toDateString()) return `hoy ${hm}`;
+  if (t.toDateString() === new Date(n - 864e5).toDateString()) return `ayer ${hm}`;
+  return `${t.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }).replace('.', '')} · ${hm}`;
+}
+/** Etiqueta del día para separar grupos: “Hoy”, “Ayer”, “6 de octubre”. */
+export function dayLabel(ts) {
+  const t = new Date(ts), n = new Date();
+  if (t.toDateString() === n.toDateString()) return 'Hoy';
+  if (t.toDateString() === new Date(n - 864e5).toDateString()) return 'Ayer';
+  return t.toLocaleDateString('es-MX', { day: 'numeric', month: 'long' });
+}
 export const fmtKg = (v) => `${Math.round(v * 100) / 100} kg`;
 export const fmtDur = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
 export const cx = (...a) => a.filter(Boolean).join(' ');

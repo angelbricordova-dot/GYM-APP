@@ -2,11 +2,10 @@ import { html, useState, useEffect, useRef } from '../../vendor/preact-htm.js';
 import * as S from '../store.js';
 import * as L from '../logic.js';
 import { accentVars, haptic, playLike } from '../theme.js';
-import { Icon, Flame, Avatar, Segmented, Empty, Sheet, toast, cx } from './kit.js';
+import { Icon, Flame, Avatar, Segmented, Empty, Sheet, toast, cx, relTime, dayLabel } from './kit.js';
 import { ChallengesPanel, NewChallengeSheet } from './challenges.js';
 import { RoutinesPanel } from './routines.js';
 import { SuppPanel } from './supplements.js';
-import { PenaltyForm } from './skip.js';
 import { JoinOtherSheet } from './link.js';
 import { shareInvite, copyInvite } from '../invite.js';
 import { openScreen, closeScreen } from './nav.js';
@@ -91,43 +90,47 @@ function Board({ partner }) {
     ${allNotes.length > 0 && html`<div class="chips"><button class=${cx('chip pick', view === 'all' && 'on')} onClick=${() => setView('all')}>Todas · ${allNotes.length}</button><button class=${cx('chip pick', view === 'fav' && 'on')} onClick=${() => setView('fav')}>⭐ Favoritas · ${favs.length}</button></div>`}
     ${notes.length === 0
       ? html`<${Empty} icon=${view === 'fav' ? '⭐' : '💞'} title=${view === 'fav' ? 'Aún no tienes favoritas' : 'El tablero está vacío'} text=${view === 'fav' ? 'Toca la estrella de una nota para guardarla aquí. Las favoritas no se borran con “Borrar historial”.' : 'Aquí quedan las notas que se mandan. Empieza tú: una frase corta cambia el día.'} />`
-      : html`<div class="wall">${notes.map((n) => html`<${Note} n=${n} mine=${n.from === me} partner=${partner} />`)}</div>`}
+      : html`<div class="thread">${notes.map((n, i) => html`${(i === 0 || dayLabel(n.ts) !== dayLabel(notes[i - 1].ts)) && html`<div class="day-sep"><span>${dayLabel(n.ts)}</span></div>`}<${Note} key=${n.id} n=${n} mine=${n.from === me} partner=${partner} />`)}</div>`}
   </div>`;
 }
 
+/** Una nota del tablero: burbuja con quién la escribió y cuándo arriba, y las acciones (corazón, estrella, borrar) debajo, con aire. */
 function Note({ n, mine, partner }) {
   const me = S.state.auth.uid;
   const liked = (n.likes || []).includes(me);
+  const starred = (n.starred || []).includes(me);
   const [burst, setBurst] = useState(0);
   const lastTap = useRef(0);
-  const starred = (n.starred || []).includes(me);
   const star = () => { haptic(8); S.starMessage(n.id); };
   const like = () => { if (!liked) { setBurst((b) => b + 1); haptic([12, 40, 18]); playLike(); } S.likeMessage(n.id); };
   // doble toque sobre la nota = corazón (si aún no lo tiene)
   const tap = (e) => { if (e.target.closest('button')) return; const t = Date.now(); if (t - lastTap.current < 320 && !liked) like(); lastTap.current = t; };
-  const color = mine ? S.state.me.color : partner.doc?.color || '#ff5c93';
-  const when = new Date(n.ts).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+  const doc = mine ? S.state.me : partner.doc || { name: partner.name };
+  const color = doc.color || '#ff5c93';
+  const likes = (n.likes || []).length;
   const EMOJI = ['❤', '💗', '💕', '✨'];
-  return html`<article class=${cx('note', mine && 'mine', n.kind === 'skip' && 'skip', burst > 0 && 'bump')} key=${`n${n.id}-${burst}`} style=${accentVars(color)} onClick=${tap}>
-    ${burst > 0 && html`<span class="like-burst" key=${burst} aria-hidden="true"><i class="like-ring"></i>${Array.from({ length: 12 }, (_, i) => {
-      const a = (i / 12) * Math.PI * 2 + (i % 2) * 0.2, d = 46 + (i % 3) * 22;
-      return html`<i class="lb" style=${`--x:${(Math.cos(a) * d).toFixed(1)}px;--y:${(Math.sin(a) * d - 30).toFixed(1)}px;--r:${(i % 2 ? 1 : -1) * (20 + (i * 17) % 50)}deg;--s:${(0.8 + (i % 4) * 0.22).toFixed(2)};--dl:${(i % 6) * 55}ms`}>${EMOJI[i % EMOJI.length]}</i>`;
-    })}</span>`}
-    ${n.kind === 'skip' && html`<span class="skip-tag">😔 ${mine ? 'Hoy no fui al gym' : 'Hoy no fue al gym'}</span>`}
-    <p>${n.text}</p>
-    ${n.kind === 'skip' && (n.penalty
-      ? html`<p class="skip-pen">−${n.penalty.points} puntos de amor</p>`
-      : mine ? html`<p class="muted small">Esperando a que ${partner.name} decida cuántos puntos te quita.</p>` : html`<${PenaltyForm} m=${n} name=${partner.name} />`)}
-    <footer>
-      <small>${mine ? 'Tú' : partner.name} · ${when}</small>
-      <span class="note-actions">
-        ${mine && html`<button class="note-btn" onClick=${async () => { if (confirm('¿Borrar esta nota?')) await S.deleteMessage(n.id); }} aria-label="Borrar nota"><${Icon} name="trash" size=${15} /></button>`}
-        <button class=${cx('note-btn star-btn', starred && 'on')} onClick=${star} aria-label=${starred ? 'Quitar de favoritas' : 'Guardar en favoritas'} aria-pressed=${starred}><span class=${cx('heart-ic', starred && 'pop')} key=${starred ? 'son' : 'soff'}><${Icon} name="star" size=${18} fill=${starred} /></span></button>
-        <button class=${cx('note-btn heart-btn', liked && 'on')} onClick=${like} aria-label=${liked ? 'Quitar corazón' : 'Dar corazón'} aria-pressed=${liked}>
-          <span class=${cx('heart-ic', liked && 'pop')} key=${liked ? 'on' : 'off'}><${Icon} name="heart" size=${18} fill=${liked} /></span>${(n.likes || []).length > 0 ? html`<b>${n.likes.length}</b>` : null}
-        </button>
-      </span>
-    </footer>
+  return html`<article class=${cx('msg', mine && 'mine')} style=${accentVars(color)}>
+    <header class="msg-head">
+      ${!mine && html`<${Avatar} doc=${doc} size=${26} />`}
+      <b>${mine ? 'Tú' : partner.name}</b><span class="dot">·</span><time datetime=${new Date(n.ts).toISOString()}>${relTime(n.ts)}</time>
+    </header>
+    <div class=${cx('bubble', burst > 0 && 'bump')} key=${`b${n.id}-${burst}`} onClick=${tap}>
+      <p>${n.text}</p>
+      ${likes > 0 && html`<span class=${cx('bubble-likes', liked && 'mine')} aria-label=${`${likes} corazones`}>❤ ${likes}</span>`}
+    </div>
+    <div class="msg-actions">
+      ${!mine && html`<button class=${cx('react-pill heart-btn', liked && 'on')} onClick=${like} aria-label=${liked ? 'Quitar corazón' : 'Dar corazón'} aria-pressed=${liked}>
+        ${burst > 0 && html`<span class="like-burst" key=${burst} aria-hidden="true"><i class="like-ring"></i>${Array.from({ length: 12 }, (_, i) => {
+          const a = (i / 12) * Math.PI * 2 + (i % 2) * 0.2, d = 46 + (i % 3) * 22;
+          return html`<i class="lb" style=${`--x:${(Math.cos(a) * d).toFixed(1)}px;--y:${(Math.sin(a) * d - 30).toFixed(1)}px;--r:${(i % 2 ? 1 : -1) * (20 + (i * 17) % 50)}deg;--s:${(0.8 + (i % 4) * 0.22).toFixed(2)};--dl:${(i % 6) * 55}ms`}>${EMOJI[i % EMOJI.length]}</i>`;
+        })}</span>`}
+        <span class=${cx('heart-ic', liked && 'pop')} key=${liked ? 'on' : 'off'}><${Icon} name="heart" size=${18} fill=${liked} /></span><span class="pill-t">${liked ? 'Te gusta' : 'Me gusta'}</span>
+      </button>`}
+      <button class=${cx('react-pill star-btn', starred && 'on')} onClick=${star} aria-label=${starred ? 'Quitar de favoritas' : 'Guardar en favoritas'} aria-pressed=${starred}>
+        <span class=${cx('heart-ic', starred && 'pop')} key=${starred ? 'son' : 'soff'}><${Icon} name="star" size=${18} fill=${starred} /></span><span class="pill-t">${starred ? 'Favorita' : 'Guardar'}</span>
+      </button>
+      ${mine && html`<button class="react-pill del" onClick=${async () => { if (confirm('¿Borrar esta nota?')) await S.deleteMessage(n.id); }} aria-label="Borrar nota"><${Icon} name="trash" size=${17} /></button>`}
+    </div>
   </article>`;
 }
 

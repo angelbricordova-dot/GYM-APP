@@ -70,8 +70,8 @@ function Prizes({ active, bal, me, partner, onIdeas }) {
         <button class=${cx('btn sm', bal >= p.cost && 'primary')} disabled=${bal < p.cost} onClick=${() => redeem(p)}>${bal >= p.cost ? 'Canjear' : `Faltan ${p.cost - bal}`}</button>
       </div>
       ${p.change && p.change.by === uid
-        ? html`<div class="price-note">⏳ Propusiste ${p.change.cost} puntos${partner ? ` · ${partner.name} decide` : ''} <button class="link" onClick=${() => price(p, 'cancel-change')}>Cancelar</button></div>`
-        : !p.change && html`<button class="link muted price-link" onClick=${() => setChange(p)}><${Icon} name="pencil" size=${13} /> Pensármelo mejor · cambiar el precio</button>`}
+        ? html`<div class="price-box pending"><span class="pb-ic">⏳</span><div class="grow"><b>Propusiste ${p.change.cost} puntos</b><small>${partner ? `${partner.name} decide si lo acepta` : 'Esperando respuesta'}</small></div><button class="btn sm tinted" onClick=${() => price(p, 'cancel-change')}>Cancelar</button></div>`
+        : !p.change && html`<button class="price-box ask" onClick=${() => setChange(p)}><span class="pb-ic">💱</span><div class="grow"><b>Pensármelo mejor</b><small>Proponer otro precio para este premio</small></div><${Icon} name="right" size=${16} class="chev" /></button>`}
       </div>`) : html`<${Empty} icon="🎁" title="Aún no hay premios" text="Un premio existe cuando uno lo propone y el otro lo acepta." action=${html`<button class="btn primary" onClick=${onIdeas}>Ir a Ideas</button>`} />`}
     </section>
     ${change && html`<${CounterSheet} p=${change} title="Cambiar el precio" text=${`“${change.emoji} ${change.name}” cuesta ${change.cost} puntos. Si lo piensas mejor, propón otro precio: ${partner?.name || 'tu pareja'} tiene que aceptarlo y mientras tanto sigue valiendo el actual.`} cta="Proponer este precio" onClose=${() => setChange(null)} onSend=${(c) => { price(change, 'change', c); setChange(null); }} />`}
