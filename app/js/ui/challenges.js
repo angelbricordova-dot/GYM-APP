@@ -237,6 +237,10 @@ export function ReviewSheet({ c, onClose, viewOnly }) {
   const [asking, setAsking] = useState(false);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  // En iPhone, un <video> que aparece mientras la hoja todavía sube se dibuja mal (se ve transparente o fuera de lugar):
+  // se espera a que termine de subir y recién entonces entra el video.
+  const [settled, setSettled] = useState(false);
+  useEffect(() => { const id = setTimeout(() => setSettled(true), 520); return () => clearTimeout(id); }, []);
   useEffect(() => { let live = true; S.loadEvidence(c).then((u) => live && setSrc(u)); return () => { live = false; }; }, [c.id, c.evidence?.ts]);
 
   const decide = async (action) => {
@@ -249,7 +253,7 @@ export function ReviewSheet({ c, onClose, viewOnly }) {
   };
 
   const media = html`<div class="cam done">
-      ${!src ? html`<div class="spinner"></div>` : c.evidence?.kind === 'video' ? html`<video src=${src} controls playsinline onLoadedMetadata=${(e) => fixDuration(e.target)}></video>` : html`<img src=${src} alt="Evidencia" />`}
+      ${!src || !settled ? html`<div class="spinner"></div>` : c.evidence?.kind === 'video' ? html`<video key="ev" src=${src} controls playsinline preload="metadata" onLoadedMetadata=${(e) => fixDuration(e.target)}></video>` : html`<img src=${src} alt="Evidencia" />`}
     </div>
     <${SaveButton} url=${src} name=${`lindwyrm-reto-${c.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'evidencia'}`} />`;
 
