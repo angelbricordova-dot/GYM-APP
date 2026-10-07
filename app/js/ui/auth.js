@@ -218,5 +218,5 @@ export function Auth() {
 
 const Shell = ({ children, hero }) => html`<div class=${cx('auth', hero && 'hero')}>
   <div class="glow g1"></div><div class="glow g2"></div>
-  <div class="auth-in">${hero && html`<div class="logo-mark big"><${Icon} name="heart" size=${44} fill /></div>`}${children}</div>
+  <div class="auth-in">${hero && html`<div class="logo-mark big"><img src="/icons/logo.png" alt="Lindwyrm" width="96" height="96" /></div>`}${children}</div>
 </div>`;

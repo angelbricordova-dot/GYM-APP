@@ -141,7 +141,7 @@ export function Onboarding({ onClose }) {
   };
   return html`<div class="screen onboarding">
     <div class="screen-body center-col"><div class="ob-in">
-      <div class="logo-mark"><${Icon} name="heart" size=${40} fill /></div>
+      <div class="logo-mark"><img src="/icons/logo.png" alt="Lindwyrm" width="84" height="84" /></div>
       <h1>Cuéntanos de ti</h1>
       <p class="muted center">Solo para calcular tu progreso. Tu peso es privado.</p>
       <div class="stack w100">
