@@ -69,7 +69,7 @@ function Prizes({ active, bal, me, partner, onIdeas }) {
       ${toFulfill.map((v) => html`<div class="fulfil"><div class="reward"><span class="emoji">${v.emoji}</span><div class="grow"><b>${v.name}</b><small class="muted">Canjeado por ${who(v.by, partner)} · ${fmtDay(L.ymd(new Date(v.ts)))}</small></div></div>
         ${(v.lies || []).length > 0 && v.status === 'open' && html`<p class="lie-note">⚠️ Ya te marcaron ${(v.lies || []).length} ${(v.lies || []).length === 1 ? 'vez' : 'veces'} como que no lo hiciste (−${(v.lies || []).length * L.LIE_PENALTY} puntos). Cúmplelo de verdad antes de tocar “Lo hice”.</p>`}
         ${v.status === 'claimed'
-          ? html`<div class="price-box pending"><span class="pb-ic">⏳</span><div class="grow"><b>Esperando confirmación</b><small>${partner?.name || 'Tu pareja'} tiene que decir que sí lo cumpliste. Si dices que lo hiciste y no es cierto, pierdes ${L.LIE_PENALTY} puntos</small></div></div>`
+          ? html`<div class="price-box pending"><span class="pb-ic">⏳</span><div class="grow"><b>Esperando confirmación</b><small>${partner?.name || 'Tu pareja'} tiene que confirmarlo</small></div></div>`
           : html`<button class="btn primary block" onClick=${() => claim(v)}><${Icon} name="check" size=${18} sw=${2.6} /> Lo hice</button>`}
       </div>`)}</section>`}
     ${mineOpen.length > 0 && html`<section class="card rise"><h2>Mis premios canjeados</h2>${mineOpen.map((v) => html`<div class="fulfil"><div class="reward"><span class="emoji">${v.emoji}</span><div class="grow"><b>${v.name}</b><small class="muted">Canjeado ${fmtDay(L.ymd(new Date(v.ts)))}</small></div></div>
@@ -77,7 +77,8 @@ function Prizes({ active, bal, me, partner, onIdeas }) {
         ? html`<div class="price-box ask"><span class="pb-ic">🙋</span><div class="grow"><b>${partner?.name || 'Tu pareja'} dice que ya lo cumplió</b><small>¿Es verdad? Solo tú lo puedes confirmar</small></div></div>
            <div class="idea-actions"><button class="btn sm primary" onClick=${() => act(v, 'confirm', '¡Premio cumplido! 🎉')}>Sí, me lo cumplió</button><button class="btn sm ghost" onClick=${() => act(v, 'reject', 'Quedó pendiente')}>Todavía no</button></div>
            <button class="btn sm bad block" onClick=${() => deny(v)}>✋ No, no lo hizo · −${L.LIE_PENALTY} puntos por mentir</button>`
-        : html`<div class="price-box pending"><span class="pb-ic">⏳</span><div class="grow"><b>Esperando que ${partner?.name || 'tu pareja'} lo cumpla</b><small>Cuando lo haga, te pedirá que lo confirmes</small></div><button class="btn sm tinted" onClick=${() => act(v, 'confirm', '¡Premio cumplido! 🎉')}>Ya me lo cumplió</button></div>`}
+        : html`<div class="price-box pending slim"><span class="pb-ic">⏳</span><div class="grow"><b>Esperando que ${partner?.name || 'tu pareja'} lo cumpla</b></div></div>
+           <button class="btn sm tinted block" onClick=${() => act(v, 'confirm', '¡Premio cumplido! 🎉')}>Ya me lo cumplió</button>`}
     </div>`)}</section>`}
     ${S.priceChangesForMe().length > 0 && html`<section class="card rise attn"><h2>Cambio de precio</h2>${S.priceChangesForMe().map((p) => html`<div class="idea">
       <div class="idea-top"><span class="emoji">${p.emoji}</span><div class="grow"><b>${p.name}</b><small class="muted">${who(p.change.by, partner)} quiere cambiar el precio: <${Points} n=${p.cost} size=${13} /> → <${Points} n=${p.change.cost} size=${13} /></small></div></div>
