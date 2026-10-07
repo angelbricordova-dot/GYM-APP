@@ -634,7 +634,8 @@ details.card[open] summary { margin-bottom: 8px; }
 /* ---------- perfil ---------- */
 .avatar-edit { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 6px 0 4px; }
 .avatar-edit > button:first-child { position: relative; background: none; border: 0; padding: 0; }
-.avatar-name { font-size: 22px; letter-spacing: -.02em; margin-top: 8px; }
+.avatar-name { display: inline-flex; align-items: center; gap: 8px; font-size: 22px; letter-spacing: -.02em; margin-top: 8px; background: none; border: 0; color: inherit; cursor: pointer; padding: 4px 8px; }
+.avatar-name svg { opacity: .5; }
 .cam-badge { position: absolute; right: -2px; bottom: 2px; width: 34px; height: 34px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; border: 3px solid var(--bg); color: var(--on-accent); }
 .logo-mark { position: relative; isolation: isolate; width: 84px; height: 84px; border-radius: 28px; overflow: hidden; background: #ffe1ee; margin-bottom: 8px; box-shadow: 0 16px 40px -14px rgba(214, 28, 87, .55); }
 /* Fondo de colores difuminados que se mueve despacio (mismo estilo que el icono de la app) */

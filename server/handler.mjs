@@ -764,6 +764,21 @@ function bankPoints(doc, items, only = false) {
 }
 
 /** Salir de la vinculación: se conservan los progresos y puntos de cada quien; lo compartido (notas, retos, premios, rutinas) se borra. */
+/** Cambiar mi nombre. Es también con el que entro, así que no puede repetirse. */
+async function renameMe(user, body) {
+  const name = clean(body.name, 20);
+  if (name.length < 2) return fail(400, 'El nombre debe tener al menos 2 letras.');
+  if (norm(name) !== norm(user.name)) {
+    const taken = (await allUsers()).filter(Boolean).some((u) => u.id !== user.id && norm(u.name) === norm(name));
+    if (taken) return fail(409, 'Ese nombre ya está en uso; usa otro.');
+  }
+  user.name = name;
+  user.doc.name = name;
+  user.doc.updatedAt = Math.max(Date.now(), (user.doc.updatedAt || 0) + 1);
+  await db.set(`user/${user.id}`, user);
+  return json(200, { ok: true, name });
+}
+
 async function leaveMe(user) {
   const meta = await getMeta();
   const sp = spaceOf(meta, user.id);
@@ -933,6 +948,7 @@ export default async function handler(req) {
     if (path.startsWith('/push/')) return await pushRoutes(user, path, m === 'POST' ? await body() : {}, m);
     if (m === 'POST' && path === '/me/reset') return await resetMe(user);
     if (m === 'POST' && path === '/me/delete') return await deleteMe(user);
+    if (m === 'POST' && path === '/me/rename') return await renameMe(user, await body());
     if (m === 'POST' && path === '/me/leave') return await leaveMe(user);
     if (m === 'POST' && path === '/history/clear') return await clearHistory(user, await body());
     if (m === 'POST' && path === '/gifts') return await sendGift(user, await body());

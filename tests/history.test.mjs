@@ -135,3 +135,15 @@ test('regalar puntos: se restan a quien regala y se suman a su pareja (sin pasar
   await call('POST', '/history/clear', { token: A.token, body: { kinds: ['challenges', 'notes'] } });
   assert.equal(await bal(A), a0 + 30);
 });
+
+test('cambiar nombre: se actualiza, no se puede repetir y sirve para entrar', async () => {
+  assert.equal((await call('POST', '/me/rename', { token: A.token, body: { name: 'A' } })).status, 400);
+  assert.equal((await call('POST', '/me/rename', { token: A.token, body: { name: 'angelica' } })).status, 409); // ya existe (sin acentos)
+  const ok = await call('POST', '/me/rename', { token: A.token, body: { name: 'Ángel Bricordova' } });
+  assert.equal(ok.status, 200);
+  const s = await sync(A);
+  assert.equal(s.me.name, 'Ángel Bricordova');
+  assert.equal((await sync(B)).partner.name, 'Ángel Bricordova');
+  assert.equal((await call('POST', '/login', { body: { name: 'Ángel Bricordova', pin: '1234' } })).status, 200);
+  assert.equal((await call('POST', '/me/rename', { token: A.token, body: { name: 'ÁNGEL bricordova' } })).status, 200); // mismo nombre con otras mayúsculas
+});

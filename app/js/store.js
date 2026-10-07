@@ -508,6 +508,14 @@ export async function clearHistory(kinds) {
   return res;
 }
 
+/** Cambiar mi nombre (el que se muestra y con el que entro). El servidor revisa que no esté repetido. */
+export async function rename(name) {
+  await syncNow();
+  const res = await call('POST', '/me/rename', { name });
+  if (res.ok) { state.me.name = res.data.name; state.me.updatedAt = Math.max(Date.now(), state.me.updatedAt + 1); commit(); await syncNow(); }
+  return res;
+}
+
 /** Salir de la vinculación con mi pareja (queda mi progreso; lo compartido se borra). */
 export async function leavePartner() {
   await syncNow(); // primero subo mis cambios para que no se pisen

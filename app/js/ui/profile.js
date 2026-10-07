@@ -14,7 +14,7 @@ export function Profile() {
   const me = S.state.me;
   const acc = S.state.account || {};
   const file = useRef();
-  const [name, setName] = useState(me.name);
+  const [nameSheet, setNameSheet] = useState(false);
   const [height, setHeight] = useState(me.heightCm ?? '');
   const [theme, setThemeState] = useState(getTheme());
   const [googleId, setGoogleId] = useState(null);
@@ -51,7 +51,8 @@ export function Profile() {
         <button onClick=${() => file.current.click()} aria-label="Cambiar foto de perfil"><${Avatar} doc=${me} size=${104} ring /><span class="cam-badge"><${Icon} name="camera" size=${16} /></span></button>
         <input ref=${file} type="file" accept="image/*" hidden onChange=${pickAvatar} />
         ${cropFile && html`<${AvatarCropper} file=${cropFile} onClose=${() => setCropFile(null)} onDone=${(data) => { S.profile({ avatar: data }); setCropFile(null); toast('Foto de perfil actualizada', { icon: '📸' }); }} />`}
-        <b class="avatar-name">${me.name}</b>
+        <button class="avatar-name" onClick=${() => setNameSheet(true)} aria-label="Cambiar nombre"><b>${me.name}</b><${Icon} name="pencil" size=${16} /></button>
+        ${nameSheet && html`<${NameSheet} current=${me.name} onClose=${() => setNameSheet(false)} />`}
         ${me.avatar && html`<button class="link" onClick=${() => S.profile({ avatar: null })}>Quitar foto</button>`}
       </div>
 
@@ -65,7 +66,7 @@ export function Profile() {
 
       <h3 class="sec-h">Tus datos</h3>
       <div class="group pad stack">
-        <${Field} label="Nombre"><input value=${name} maxlength="20" onInput=${(e) => setName(e.target.value)} onBlur=${() => name.trim() && S.profile({ name: name.trim() })} /><//>
+        <button class="row" onClick=${() => setNameSheet(true)}><div class="grow"><b>Nombre</b><small class="muted">${me.name}</small></div><${Icon} name="right" size=${16} class="chev" /></button>
         <${Field} label="Estatura (cm)"><input inputmode="decimal" value=${height} onInput=${(e) => setHeight(e.target.value)} onBlur=${() => S.profile({ heightCm: L.num(height) || null })} placeholder="170" /><//>
       </div>
 
@@ -254,6 +255,29 @@ function Notifications({ acc }) {
 }
 
 // ============ borrar historial ============
+function NameSheet({ current, onClose }) {
+  const [name, setName] = useState(current);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const save = async (e) => {
+    e?.preventDefault();
+    const n = name.trim();
+    if (n === current) return onClose();
+    setBusy(true); setErr('');
+    const r = await S.rename(n);
+    setBusy(false);
+    if (r.ok) { toast('Nombre actualizado', { icon: '✏️' }); onClose(); } else setErr(r.data.error || 'No se pudo cambiar el nombre.');
+  };
+  return html`<${Sheet} title="Cambiar nombre" onClose=${onClose}>
+    <form class="stack" onSubmit=${save}>
+      <${Field} label="Nombre"><input value=${name} maxlength="20" autofocus autocomplete="username" onInput=${(e) => setName(e.target.value)} /><//>
+      <p class="muted small">Así te ve tu pareja y es también el nombre con el que entras.</p>
+      ${err && html`<p class="neg">${err}</p>`}
+      <button class="btn primary block lg" disabled=${busy || name.trim().length < 2}>${busy ? 'Guardando…' : 'Guardar'}</button>
+    </form>
+  <//>`;
+}
+
 function HistorySheet({ onClose }) {
   const c = S.historyCounts();
   const rows = [
