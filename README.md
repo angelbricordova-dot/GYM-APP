@@ -34,7 +34,7 @@ app/                      la app (HTML/CSS/JS sin build; Preact vendorizado en a
   js/ui/*.js              pantallas y componentes
 tests/                    API, lógica y diseño (node --test)
 tools/dev-server.mjs      servidor local con la misma API
-tools/make-icons.mjs      genera los iconos desde tools/logo-source.png (corazón con pesa)
+tools/make-icons.mjs      genera los iconos (corazón con pesa sobre degradado) desde tools/logo-source.png
 ```
 
 ## Publicar en Netlify

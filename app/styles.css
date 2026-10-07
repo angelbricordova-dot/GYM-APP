@@ -610,8 +610,14 @@ details.card[open] summary { margin-bottom: 8px; }
 .avatar-edit > button:first-child { position: relative; background: none; border: 0; padding: 0; }
 .avatar-name { font-size: 22px; letter-spacing: -.02em; margin-top: 8px; }
 .cam-badge { position: absolute; right: -2px; bottom: 2px; width: 34px; height: 34px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; border: 3px solid var(--bg); color: var(--on-accent); }
-.logo-mark { width: 84px; height: 84px; border-radius: 28px; overflow: hidden; background: #fff; margin-bottom: 8px; box-shadow: 0 16px 40px -14px rgba(214, 28, 87, .55); }
-.logo-mark img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.logo-mark { position: relative; isolation: isolate; width: 84px; height: 84px; border-radius: 28px; overflow: hidden; background: #ffe1ee; margin-bottom: 8px; box-shadow: 0 16px 40px -14px rgba(214, 28, 87, .55); }
+/* Fondo de colores difuminados que se mueve despacio (mismo estilo que el icono de la app) */
+.logo-mark::before { content: ''; position: absolute; inset: -40%; z-index: -1; filter: blur(12px); animation: logoFlow 12s linear infinite;
+  background: radial-gradient(circle at 22% 25%, #ffa6c9 0 22%, transparent 55%), radial-gradient(circle at 78% 22%, #bda9ff 0 22%, transparent 55%), radial-gradient(circle at 76% 80%, #9fead2 0 22%, transparent 55%), radial-gradient(circle at 20% 82%, #ffd39a 0 20%, transparent 55%); }
+.logo-mark img { display: block; width: 100%; height: 100%; object-fit: cover; filter: drop-shadow(0 3px 5px rgba(120, 10, 50, .35)); animation: logoBeat 3.2s ease-in-out infinite; }
+@keyframes logoFlow { to { transform: rotate(360deg); } }
+@keyframes logoBeat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+@media (prefers-reduced-motion: reduce) { .logo-mark::before, .logo-mark img { animation: none; } }
 .logo-mark.big { width: 96px; height: 96px; border-radius: 32px; margin-bottom: 14px; }
 .onboarding { z-index: 45; }
 .onboarding .screen-body { justify-content: center; }
