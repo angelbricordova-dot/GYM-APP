@@ -86,7 +86,19 @@ test('propuestas: proponer, contraoferta y aceptar solo la otra persona', async 
 
   const v = (await call('POST', '/vouchers', { token: B.token, body: { proposalId: p.id } })).data.voucher;
   assert.equal(v.cost, 80);
-  assert.equal((await call('POST', `/vouchers/${v.id}/done`, { token: A.token })).data.voucher.status, 'done');
+  assert.equal(v.status, 'open');
+  // quien canjeó (B) no puede marcarse el premio como hecho; lo cumple A, y B confirma que sí fue verdad
+  const act = (who, a) => call('POST', `/vouchers/${v.id}/${a}`, { token: who.token });
+  assert.equal((await act(B, 'claim')).status, 403);
+  assert.equal((await act(A, 'confirm')).status, 403); // A no puede darse por cumplido solo
+  assert.equal((await act(A, 'reject')).status, 403);
+  assert.equal((await act(A, 'claim')).data.voucher.status, 'claimed'); // “lo hice”
+  assert.equal((await act(A, 'claim')).status, 409);
+  assert.equal((await act(B, 'reject')).data.voucher.status, 'open'); // “todavía no”
+  assert.equal((await act(A, 'claim')).data.voucher.status, 'claimed');
+  assert.equal((await call('POST', `/vouchers/${v.id}/done`, { token: A.token })).status, 409); // la ruta vieja tampoco deja que A lo cierre
+  assert.equal((await act(B, 'confirm')).data.voucher.status, 'done'); // sí fue verdad
+  assert.equal((await act(B, 'confirm')).status, 409);
   const sync = (await call('GET', '/sync', { token: A.token })).data;
   assert.equal(sync.proposals.length, 1);
   assert.equal(sync.vouchers[0].status, 'done');

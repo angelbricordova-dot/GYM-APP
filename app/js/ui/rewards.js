@@ -14,7 +14,7 @@ export function Rewards() {
   const partner = S.state.partner;
   const [tab, setTab] = useState('prizes');
   const [propose, setPropose] = useState(false);
-  const pending = S.pendingForMe();
+  const pending = S.state.proposals.filter((p) => p.status === 'pending' && p.lastBy !== S.state.auth.uid); // las que esperan en la pestaña Ideas
   const bal = L.balance(me);
   const active = S.state.proposals.filter((p) => p.status === 'accepted').sort((a, b) => a.cost - b.cost);
   const next = active.find((p) => p.cost > bal);
@@ -40,15 +40,18 @@ export function Rewards() {
 const who = (id, partner) => (id === S.state.auth.uid ? 'Tú' : partner?.name || 'Tu pareja');
 
 function Prizes({ active, bal, me, partner, onIdeas }) {
+  const uid = S.state.auth.uid;
   const [celebrate, setCelebrate] = useState(false);
   const [change, setChange] = useState(null); // premio al que le cambio el precio
-  const uid = S.state.auth.uid;
   const price = async (p, action, cost) => {
     const r = await S.decide(p.id, action, cost);
     if (!r.ok) return toast(r.data.error, { icon: '⚠️' });
     toast({ change: 'Propuesta enviada: tu pareja decide', 'accept-change': `Listo: ahora cuesta ${r.data.proposal.cost} puntos`, 'decline-change': 'Se queda con el precio actual', 'cancel-change': 'Cambio cancelado' }[action], { icon: action === 'accept-change' ? '✅' : '💱' });
   };
-  const open = S.state.vouchers.filter((v) => v.status === 'open');
+  const toFulfill = S.vouchersToFulfill(); // los que mi pareja canjeó y me toca cumplir
+  const mineOpen = S.state.vouchers.filter((v) => v.by === uid && ['open', 'claimed'].includes(v.status)).sort((a, b) => (b.status === 'claimed') - (a.status === 'claimed'));
+  const act = async (v, action, ok) => { const r = await S.voucherAction(v.id, action); toast(r.ok ? ok : r.data.error, { icon: r.ok ? '✅' : '⚠️' }); };
+  const claim = (v) => { if (confirm(`¿De verdad ya cumpliste “${v.name}”? ${partner?.name || 'Tu pareja'} tendrá que confirmarlo.`)) act(v, 'claim', 'Listo: ahora ' + (partner?.name || 'tu pareja') + ' lo confirma'); };
   const redeem = async (p) => {
     if (!confirm(`¿Canjear “${p.name}” por ${p.cost} puntos de amor?`)) return;
     const r = await S.redeem(p);
@@ -57,7 +60,19 @@ function Prizes({ active, bal, me, partner, onIdeas }) {
   };
   return html`<div class="stack-lg">
     ${celebrate && html`<${Confetti} n=${36} />`}
-    ${open.length > 0 && html`<section class="card rise"><h2>Cupones por cumplir</h2>${open.map((v) => html`<div class="reward"><span class="emoji">${v.emoji}</span><div class="grow"><b>${v.name}</b><small class="muted">Canjeado por ${who(v.by, partner)} · ${fmtDay(L.ymd(new Date(v.ts)))}</small></div><button class="btn sm primary" onClick=${async () => { const r = await S.markVoucherDone(v.id); if (r.ok) toast('¡Cumplido!', { icon: '✅' }); }}>Hecho</button></div>`)}</section>`}
+    ${toFulfill.length > 0 && html`<section class="card rise attn"><h2>Premios pendientes por cumplir</h2>
+      <p class="muted small">${partner?.name || 'Tu pareja'} los canjeó con sus puntos. Cuando los cumplas, toca “Lo hice”: ${partner?.name || 'tu pareja'} tiene que confirmar que sí fue verdad.</p>
+      ${toFulfill.map((v) => html`<div class="fulfil"><div class="reward"><span class="emoji">${v.emoji}</span><div class="grow"><b>${v.name}</b><small class="muted">Canjeado por ${who(v.by, partner)} · ${fmtDay(L.ymd(new Date(v.ts)))}</small></div></div>
+        ${v.status === 'claimed'
+          ? html`<div class="price-box pending"><span class="pb-ic">⏳</span><div class="grow"><b>Esperando confirmación</b><small>${partner?.name || 'Tu pareja'} tiene que decir que sí lo cumpliste</small></div></div>`
+          : html`<button class="btn primary block" onClick=${() => claim(v)}><${Icon} name="check" size=${18} sw=${2.6} /> Lo hice</button>`}
+      </div>`)}</section>`}
+    ${mineOpen.length > 0 && html`<section class="card rise"><h2>Mis premios canjeados</h2>${mineOpen.map((v) => html`<div class="fulfil"><div class="reward"><span class="emoji">${v.emoji}</span><div class="grow"><b>${v.name}</b><small class="muted">Canjeado ${fmtDay(L.ymd(new Date(v.ts)))}</small></div></div>
+      ${v.status === 'claimed'
+        ? html`<div class="price-box ask"><span class="pb-ic">🙋</span><div class="grow"><b>${partner?.name || 'Tu pareja'} dice que ya lo cumplió</b><small>¿Es verdad? Solo tú lo puedes confirmar</small></div></div>
+           <div class="idea-actions"><button class="btn sm primary" onClick=${() => act(v, 'confirm', '¡Premio cumplido! 🎉')}>Sí, me lo cumplió</button><button class="btn sm ghost" onClick=${() => act(v, 'reject', 'Quedó pendiente')}>Todavía no</button></div>`
+        : html`<div class="price-box pending"><span class="pb-ic">⏳</span><div class="grow"><b>Esperando que ${partner?.name || 'tu pareja'} lo cumpla</b><small>Cuando lo haga, te pedirá que lo confirmes</small></div><button class="btn sm tinted" onClick=${() => act(v, 'confirm', '¡Premio cumplido! 🎉')}>Ya me lo cumplió</button></div>`}
+    </div>`)}</section>`}
     ${S.priceChangesForMe().length > 0 && html`<section class="card rise attn"><h2>Cambio de precio</h2>${S.priceChangesForMe().map((p) => html`<div class="idea">
       <div class="idea-top"><span class="emoji">${p.emoji}</span><div class="grow"><b>${p.name}</b><small class="muted">${who(p.change.by, partner)} quiere cambiar el precio: <${Points} n=${p.cost} size=${13} /> → <${Points} n=${p.change.cost} size=${13} /></small></div></div>
       <div class="idea-actions"><button class="btn sm primary" onClick=${() => price(p, 'accept-change')}>Aceptar ${p.change.cost}</button><button class="btn sm ghost" onClick=${() => price(p, 'decline-change')}>Dejarlo en ${p.cost}</button></div>

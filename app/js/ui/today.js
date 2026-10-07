@@ -130,8 +130,10 @@ const nextReward = (bal) => {
 /** Avisos importantes: notas nuevas, ideas por decidir, instalación en iPhone. */
 function Banners() {
   const notes = S.state.messages.filter((m) => m.from !== S.state.auth.uid && m.kind !== 'reaction' && m.kind !== 'skip' && m.ts > S.state.seenAt);
-  const pending = S.pendingForMe().length;
+  const pending = S.ideasForMe().length;
   const newRoutines = S.routinesNew();
+  const toFulfill = S.vouchersToFulfill().filter((v) => v.status === 'open');
+  const toConfirm = S.vouchersToConfirm();
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) && !navigator.standalone && !matchMedia('(display-mode: standalone)').matches;
   const [hideIos, setHideIos] = useState(() => { try { return !!localStorage.getItem('lindwyrm.iosTip'); } catch { return false; } });
   const sup = pushSupport();
@@ -144,9 +146,11 @@ function Banners() {
     setPushBusy(false);
     toast(r.ok ? 'Notificaciones activadas' : r.error, { icon: r.ok ? '🔔' : '⚠️' });
   };
-  if (!notes.length && !pending && !newRoutines.length && (!ios || hideIos) && !askPush) return null;
+  if (!notes.length && !pending && !newRoutines.length && !toFulfill.length && !toConfirm.length && (!ios || hideIos) && !askPush) return null;
   return html`<div class="group banners rise">
     ${askPush && html`<div class="row" role="button" onClick=${turnOn}><span class="lead tint-rose">🔔</span><div class="grow"><b>${pushBusy ? 'Activando…' : 'Activa las notificaciones'}</b><small class="muted">Para enterarte al instante de las notas, retos y premios de tu pareja</small></div><button class="icon-btn flat" onClick=${(e) => { e.stopPropagation(); S.dismiss('push-ask'); }} aria-label="Ahora no"><${Icon} name="x" size=${16} /></button></div>`}
+    ${toConfirm.length > 0 && html`<div class="row" role="button" onClick=${() => goTab('rewards')}><span class="lead tint-rose">🙋</span><div class="grow"><b>${S.state.partner?.name} dice que ya cumplió ${toConfirm[0].emoji} ${toConfirm[0].name}</b><small class="muted">Confirma si es verdad</small></div><${Icon} name="right" size=${16} class="chev" /></div>`}
+    ${toFulfill.length > 0 && html`<div class="row" role="button" onClick=${() => goTab('rewards')}><span class="lead tint-rose">🎁</span><div class="grow"><b>${toFulfill.length === 1 ? 'Tienes 1 premio por cumplir' : `Tienes ${toFulfill.length} premios por cumplir`}</b><small class="muted">${S.state.partner?.name} canjeó ${toFulfill[0].emoji} ${toFulfill[0].name}</small></div><${Icon} name="right" size=${16} class="chev" /></div>`}
     ${notes.length > 0 && html`<div class="row" role="button" onClick=${() => goTab('together')}><span class="lead tint-rose">💌</span><div class="grow"><b>Nota de ${S.state.partner?.name}</b><small class="muted">${notes.at(-1).text}</small></div><${Icon} name="right" size=${16} class="chev" /></div>`}
     ${newRoutines.length > 0 && html`<div class="row" role="button" onClick=${() => goTab('together')}><span class="lead tint-rose">🏋️</span><div class="grow"><b>${S.state.partner?.name} te recomendó una rutina</b><small class="muted">${newRoutines[0].name}</small></div><${Icon} name="right" size=${16} class="chev" /></div>`}
     ${pending > 0 && html`<div class="row" role="button" onClick=${() => goTab('rewards')}><span class="lead tint-rose">🎁</span><div class="grow"><b>${pending} idea${pending > 1 ? 's' : ''} por decidir</b><small class="muted">Tu pareja propuso un premio</small></div><${Icon} name="right" size=${16} class="chev" /></div>`}

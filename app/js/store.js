@@ -79,7 +79,15 @@ function incoming(prev, cur, name, first) {
     else if (old && old.change?.by === me && !p.change && p.status === 'accepted') out.push({ icon: p.cost !== old.cost ? '✅' : '↩️', title: p.cost !== old.cost ? `${name} aceptó el nuevo precio: ${p.cost} puntos` : `${name} prefiere dejarlo en ${p.cost} puntos`, body: `${p.emoji} ${p.name}`, tab: 'rewards' });
     else if (old && p.status === 'pending' && p.lastBy !== me && old.lastBy === me) out.push({ icon: '💱', title: `${name} contraofertó ${p.cost} puntos`, body: `${p.emoji} ${p.name}`, tab: 'rewards' });
   }
-  for (const v of cur.vouchers) if (!pv.has(v.id) && v.by !== me && fresh(v.ts)) out.push({ icon: v.emoji || '🎁', title: `${name} canjeó un premio`, body: v.name, tab: 'rewards' });
+  for (const v of cur.vouchers) {
+    const old = pv.get(v.id);
+    if (!old && v.by !== me && fresh(v.ts)) out.push({ icon: v.emoji || '🎁', title: `${name} canjeó un premio`, body: `${v.name} · te toca cumplirlo`, tab: 'rewards' });
+    else if (old && old.status !== v.status) {
+      if (v.by === me && v.status === 'claimed') out.push({ icon: '🙋', title: `${name} dice que ya cumplió tu premio`, body: `${v.emoji} ${v.name}: confirma si es verdad`, tab: 'rewards' });
+      if (v.by !== me && v.status === 'done') out.push({ icon: '✅', title: `${name} confirmó tu premio`, body: `${v.emoji} ${v.name} cumplido`, tab: 'rewards' });
+      if (v.by !== me && old.status === 'claimed' && v.status === 'open') out.push({ icon: '↩️', title: `${name} dice que todavía no se cumplió`, body: `${v.emoji} ${v.name}`, tab: 'rewards' });
+    }
+  }
   for (const r of cur.routines) if (!pr.has(r.id) && r.to === me && fresh(r.ts)) out.push({ icon: '🏋️', title: `${name} te recomendó una rutina`, body: r.name, tab: 'together' });
   const today = L.ymd();
   if (!first && !prev.partnerDoc?.checkins?.[today] && cur.partner?.doc?.checkins?.[today]) out.push({ icon: '🔥', title: `${name} ya entrenó`, body: 'Mándale ánimo', tab: 'together' });
@@ -344,7 +352,14 @@ async function act(method, path, body) {
 
 export const propose = (p) => act('POST', '/proposals', p);
 export const decide = (id, action, cost) => act('POST', `/proposals/${id}`, { action, cost });
-export const markVoucherDone = (id) => act('POST', `/vouchers/${id}/done`);
+/** claim = “lo hice” (lo marca quien debe cumplirlo) · confirm = “sí me lo cumplió” · reject = “todavía no” (los dos últimos, quien canjeó). */
+export const voucherAction = (id, action) => act('POST', `/vouchers/${id}/${action}`);
+/** Ideas de premio que esperan mi respuesta (propuestas nuevas, contraofertas y cambios de precio). */
+export const ideasForMe = () => [...state.proposals.filter((p) => p.status === 'pending' && p.lastBy !== state.auth?.uid), ...priceChangesForMe()];
+/** Premios que mi pareja canjeó y me toca cumplir. */
+export const vouchersToFulfill = () => state.vouchers.filter((v) => v.by !== state.auth?.uid && ['open', 'claimed'].includes(v.status));
+/** Premios que yo canjeé y mi pareja dice que ya cumplió: me toca confirmar si es verdad. */
+export const vouchersToConfirm = () => state.vouchers.filter((v) => v.by === state.auth?.uid && v.status === 'claimed');
 export const sendMessage = (text, kind = 'text', ref = null) => act('POST', '/messages', { text, kind, ref });
 /** Corazón al instante (optimista): se ve de inmediato y el servidor lo confirma; si falla, se revierte. */
 export async function likeMessage(id) {
@@ -424,7 +439,7 @@ export async function redeem(proposal) {
 
 export const markSeen = () => { state.seenAt = Date.now(); commit(); };
 export const unread = () => state.messages.filter((m) => m.from !== state.auth?.uid && m.kind !== 'skip' && m.kind !== 'reaction' && m.ts > state.seenAt).length;
-export const pendingForMe = () => state.proposals.filter((p) => (p.status === 'pending' && p.lastBy !== state.auth?.uid) || (p.status === 'accepted' && p.change && p.change.by !== state.auth?.uid));
+export const pendingForMe = () => [...state.vouchers.filter((v) => (v.by !== state.auth?.uid && v.status === 'open') || (v.by === state.auth?.uid && v.status === 'claimed')), ...state.proposals.filter((p) => (p.status === 'pending' && p.lastBy !== state.auth?.uid) || (p.status === 'accepted' && p.change && p.change.by !== state.auth?.uid))];
 /** Premios aceptados cuyo precio mi pareja quiere cambiar (me toca decidir). */
 export const priceChangesForMe = () => state.proposals.filter((p) => p.status === 'accepted' && p.change && p.change.by !== state.auth?.uid);
 

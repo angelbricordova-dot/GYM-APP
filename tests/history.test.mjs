@@ -44,7 +44,8 @@ test('preparar: pareja con retos, notas, premios y rutinas', async () => {
   const pa = (await call('POST', '/proposals', { token: A.token, body: { name: 'sí', cost: 10 } })).data.proposal;
   await call('POST', `/proposals/${pa.id}`, { token: B.token, body: { action: 'accept' } });
   const v = (await call('POST', '/vouchers', { token: B.token, body: { proposalId: pa.id } })).data.voucher;
-  await call('POST', `/vouchers/${v.id}/done`, { token: A.token });
+  await call('POST', `/vouchers/${v.id}/claim`, { token: A.token });
+  await call('POST', `/vouchers/${v.id}/confirm`, { token: B.token });
   // rutinas: una vista y una nueva
   const r1 = (await call('POST', '/routines', { token: A.token, body: { name: 'vista', exercises: ['x'] } })).data.routine;
   await call('POST', `/routines/${r1.id}/seen`, { token: B.token });

@@ -465,12 +465,31 @@ async function postVoucher(user, body) {
   return json(200, { voucher: v });
 }
 
-async function doneVoucher(user, id) {
+async function voucherAction(user, id, action) {
   const key = (await db.list('voucher/')).find((k) => k.endsWith(`-${id}`));
   const v = key && (await db.get(key));
   if (!inSpace(v, await mySpace(user))) return fail(404, 'No existe ese cupón.');
-  v.status = 'done'; v.doneAt = Date.now();
+  const redeemer = v.by === user.id;
+  // `done` (rutas viejas): quien canjeó lo da por cumplido; la otra persona avisa que ya lo hizo
+  if (action === 'done') action = redeemer ? 'confirm' : 'claim';
+  if (action === 'claim') {
+    // “Lo hice”: lo marca quien debe cumplirlo (la pareja de quien canjeó) y queda pendiente de confirmación
+    if (redeemer) return fail(403, 'Ese premio te lo cumple tu pareja.');
+    if (v.status !== 'open') return fail(409, v.status === 'claimed' ? 'Ya avisaste que lo hiciste: falta que tu pareja lo confirme.' : 'Ese cupón ya está cumplido.');
+    v.status = 'claimed'; v.claimedAt = Date.now(); delete v.rejectNote;
+  } else if (action === 'confirm') {
+    // Solo quien canjeó puede decir que sí se lo cumplieron (así nadie se marca un premio “hecho” por su cuenta)
+    if (!redeemer) return fail(403, 'Eso lo confirma quien canjeó el premio.');
+    if (v.status === 'done') return fail(409, 'Ese cupón ya está cumplido.');
+    v.status = 'done'; v.doneAt = Date.now();
+  } else if (action === 'reject') {
+    if (!redeemer) return fail(403, 'Eso lo decide quien canjeó el premio.');
+    if (v.status !== 'claimed') return fail(409, 'No hay nada por rechazar.');
+    v.status = 'open'; v.rejectedAt = Date.now(); delete v.claimedAt;
+  } else return fail(404, 'Ruta no encontrada.');
   await db.set(key, v);
+  const note = { claim: { title: `${first(user.name)} dice que ya cumplió ${v.emoji} ${v.name}`, body: 'Confirma si es verdad' }, confirm: { title: `${first(user.name)} confirmó: ${v.emoji} ${v.name} cumplido ✅`, body: '¡Gracias!' }, reject: { title: `${first(user.name)} dice que ${v.emoji} ${v.name} todavía no se cumplió`, body: 'Quedó pendiente' } }[action];
+  await tell(user, { type: 'prizes', ...note, url: '/?tab=rewards' });
   return json(200, { voucher: v });
 }
 
@@ -864,7 +883,7 @@ export default async function handler(req) {
     if (m === 'POST' && path === '/proposals') return await postProposal(user, await body());
     if (m === 'POST' && (r = path.match(/^\/proposals\/([^/]+)$/))) return await decideProposal(user, r[1], await body());
     if (m === 'POST' && path === '/vouchers') return await postVoucher(user, await body());
-    if (m === 'POST' && (r = path.match(/^\/vouchers\/([^/]+)\/done$/))) return await doneVoucher(user, r[1]);
+    if (m === 'POST' && (r = path.match(/^\/vouchers\/([^/]+)\/(done|claim|confirm|reject)$/))) return await voucherAction(user, r[1], r[2]);
     if (m === 'POST' && path === '/messages') return await postMessage(user, await body());
     if (path.startsWith('/push/')) return await pushRoutes(user, path, m === 'POST' ? await body() : {}, m);
     if (m === 'POST' && path === '/me/reset') return await resetMe(user);
