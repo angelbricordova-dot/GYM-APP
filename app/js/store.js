@@ -75,6 +75,8 @@ function incoming(prev, cur, name, first) {
     const old = pp.get(p.id);
     if (!old && p.by !== me && fresh(p.createdAt)) out.push({ icon: '🎁', title: `${name} propuso un premio`, body: `${p.emoji} ${p.name} · ${p.cost} puntos de amor`, tab: 'rewards' });
     else if (old && p.by === me && old.status === 'pending' && p.status !== 'pending') out.push({ icon: p.status === 'accepted' ? '✅' : '🙅', title: `${name} ${p.status === 'accepted' ? 'aceptó' : 'rechazó'} tu idea`, body: `${p.emoji} ${p.name}`, tab: 'rewards' });
+    else if (old && p.status === 'accepted' && p.change && !old.change && p.change.by !== me) out.push({ icon: '💱', title: `${name} quiere cambiar el precio a ${p.change.cost} puntos`, body: `${p.emoji} ${p.name} (ahora ${p.cost})`, tab: 'rewards' });
+    else if (old && old.change?.by === me && !p.change && p.status === 'accepted') out.push({ icon: p.cost !== old.cost ? '✅' : '↩️', title: p.cost !== old.cost ? `${name} aceptó el nuevo precio: ${p.cost} puntos` : `${name} prefiere dejarlo en ${p.cost} puntos`, body: `${p.emoji} ${p.name}`, tab: 'rewards' });
     else if (old && p.status === 'pending' && p.lastBy !== me && old.lastBy === me) out.push({ icon: '💱', title: `${name} contraofertó ${p.cost} puntos`, body: `${p.emoji} ${p.name}`, tab: 'rewards' });
   }
   for (const v of cur.vouchers) if (!pv.has(v.id) && v.by !== me && fresh(v.ts)) out.push({ icon: v.emoji || '🎁', title: `${name} canjeó un premio`, body: v.name, tab: 'rewards' });
@@ -358,6 +360,20 @@ export async function likeMessage(id) {
   return res;
 }
 
+/** Estrella (favorito) al instante, como el corazón. */
+export async function starMessage(id) {
+  const m = state.messages.find((x) => x.id === id);
+  const me = uid();
+  if (!m || !me) return { ok: false, data: {} };
+  const before = m.starred || [];
+  m.starred = before.includes(me) ? before.filter((x) => x !== me) : [...before, me];
+  commit();
+  const res = await call('POST', `/messages/${id}/star`);
+  m.starred = res.ok ? res.data.message.starred : before;
+  commit();
+  return res;
+}
+
 export const dismiss = (id) => { state.dismissed = [...(state.dismissed || []), id].slice(-60); commit(); };
 export const isDismissed = (id) => (state.dismissed || []).includes(id);
 export const deleteMessage = (id) => act('POST', `/messages/${id}/delete`);
@@ -408,7 +424,9 @@ export async function redeem(proposal) {
 
 export const markSeen = () => { state.seenAt = Date.now(); commit(); };
 export const unread = () => state.messages.filter((m) => m.from !== state.auth?.uid && m.kind !== 'skip' && m.kind !== 'reaction' && m.ts > state.seenAt).length;
-export const pendingForMe = () => state.proposals.filter((p) => p.status === 'pending' && p.lastBy !== state.auth?.uid);
+export const pendingForMe = () => state.proposals.filter((p) => (p.status === 'pending' && p.lastBy !== state.auth?.uid) || (p.status === 'accepted' && p.change && p.change.by !== state.auth?.uid));
+/** Premios aceptados cuyo precio mi pareja quiere cambiar (me toca decidir). */
+export const priceChangesForMe = () => state.proposals.filter((p) => p.status === 'accepted' && p.change && p.change.by !== state.auth?.uid);
 
 export function exportJSON() {
   return JSON.stringify({ exportedAt: new Date().toISOString(), me: state.me, partner: state.partner?.doc }, null, 2);
@@ -447,7 +465,7 @@ export function historyCounts() {
   return {
     challenges: state.challenges.filter((c) => ['approved', 'cancelled'].includes(c.status)).length,
     prizes: state.vouchers.filter((v) => v.status === 'done').length + state.proposals.filter((p) => p.status === 'declined').length,
-    notes: state.messages.filter((m) => m.kind !== 'skip' || m.penalty).length,
+    notes: state.messages.filter((m) => !(m.starred || []).length && (m.kind !== 'skip' || m.penalty)).length,
     routines: state.routines.filter((r) => r.status !== 'new').length,
   };
 }

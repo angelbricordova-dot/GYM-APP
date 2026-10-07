@@ -63,7 +63,10 @@ function Board({ partner }) {
   const me = S.state.auth.uid;
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const notes = S.state.messages.filter((m) => m.kind !== 'reaction' && m.kind !== 'skip').sort((a, b) => b.ts - a.ts); // las razones de “hoy no fui” no van al tablero
+  const [view, setView] = useState('all'); // all | fav
+  const allNotes = S.state.messages.filter((m) => m.kind !== 'reaction' && m.kind !== 'skip').sort((a, b) => b.ts - a.ts); // las razones de “hoy no fui” no van al tablero
+  const favs = allNotes.filter((n) => (n.starred || []).includes(me));
+  const notes = view === 'fav' ? favs : allNotes;
   useEffect(() => { S.markSeen(); }, [S.state.messages.length]);
 
   const send = async (t) => {
@@ -85,8 +88,9 @@ function Board({ partner }) {
         <button class="btn primary grow" disabled=${!text.trim() || busy} onClick=${() => send(text)}><${Icon} name="send" size=${16} /> Enviar nota</button>
       </div>
     </section>
+    ${allNotes.length > 0 && html`<div class="chips"><button class=${cx('chip pick', view === 'all' && 'on')} onClick=${() => setView('all')}>Todas · ${allNotes.length}</button><button class=${cx('chip pick', view === 'fav' && 'on')} onClick=${() => setView('fav')}>⭐ Favoritas · ${favs.length}</button></div>`}
     ${notes.length === 0
-      ? html`<${Empty} icon="💞" title="El tablero está vacío" text="Aquí quedan las notas que se mandan. Empieza tú: una frase corta cambia el día." />`
+      ? html`<${Empty} icon=${view === 'fav' ? '⭐' : '💞'} title=${view === 'fav' ? 'Aún no tienes favoritas' : 'El tablero está vacío'} text=${view === 'fav' ? 'Toca la estrella de una nota para guardarla aquí. Las favoritas no se borran con “Borrar historial”.' : 'Aquí quedan las notas que se mandan. Empieza tú: una frase corta cambia el día.'} />`
       : html`<div class="wall">${notes.map((n) => html`<${Note} n=${n} mine=${n.from === me} partner=${partner} />`)}</div>`}
   </div>`;
 }
@@ -96,6 +100,8 @@ function Note({ n, mine, partner }) {
   const liked = (n.likes || []).includes(me);
   const [burst, setBurst] = useState(0);
   const lastTap = useRef(0);
+  const starred = (n.starred || []).includes(me);
+  const star = () => { haptic(8); S.starMessage(n.id); };
   const like = () => { if (!liked) { setBurst((b) => b + 1); haptic([12, 40, 18]); playLike(); } S.likeMessage(n.id); };
   // doble toque sobre la nota = corazón (si aún no lo tiene)
   const tap = (e) => { if (e.target.closest('button')) return; const t = Date.now(); if (t - lastTap.current < 320 && !liked) like(); lastTap.current = t; };
@@ -116,6 +122,7 @@ function Note({ n, mine, partner }) {
       <small>${mine ? 'Tú' : partner.name} · ${when}</small>
       <span class="note-actions">
         ${mine && html`<button class="note-btn" onClick=${async () => { if (confirm('¿Borrar esta nota?')) await S.deleteMessage(n.id); }} aria-label="Borrar nota"><${Icon} name="trash" size=${15} /></button>`}
+        <button class=${cx('note-btn star-btn', starred && 'on')} onClick=${star} aria-label=${starred ? 'Quitar de favoritas' : 'Guardar en favoritas'} aria-pressed=${starred}><span class=${cx('heart-ic', starred && 'pop')} key=${starred ? 'son' : 'soff'}><${Icon} name="star" size=${18} fill=${starred} /></span></button>
         <button class=${cx('note-btn heart-btn', liked && 'on')} onClick=${like} aria-label=${liked ? 'Quitar corazón' : 'Dar corazón'} aria-pressed=${liked}>
           <span class=${cx('heart-ic', liked && 'pop')} key=${liked ? 'on' : 'off'}><${Icon} name="heart" size=${18} fill=${liked} /></span>${(n.likes || []).length > 0 ? html`<b>${n.likes.length}</b>` : null}
         </button>

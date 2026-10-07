@@ -41,6 +41,13 @@ const who = (id, partner) => (id === S.state.auth.uid ? 'Tú' : partner?.name ||
 
 function Prizes({ active, bal, me, partner, onIdeas }) {
   const [celebrate, setCelebrate] = useState(false);
+  const [change, setChange] = useState(null); // premio al que le cambio el precio
+  const uid = S.state.auth.uid;
+  const price = async (p, action, cost) => {
+    const r = await S.decide(p.id, action, cost);
+    if (!r.ok) return toast(r.data.error, { icon: '⚠️' });
+    toast({ change: 'Propuesta enviada: tu pareja decide', 'accept-change': `Listo: ahora cuesta ${r.data.proposal.cost} puntos`, 'decline-change': 'Se queda con el precio actual', 'cancel-change': 'Cambio cancelado' }[action], { icon: action === 'accept-change' ? '✅' : '💱' });
+  };
   const open = S.state.vouchers.filter((v) => v.status === 'open');
   const redeem = async (p) => {
     if (!confirm(`¿Canjear “${p.name}” por ${p.cost} puntos de amor?`)) return;
@@ -51,14 +58,23 @@ function Prizes({ active, bal, me, partner, onIdeas }) {
   return html`<div class="stack-lg">
     ${celebrate && html`<${Confetti} n=${36} />`}
     ${open.length > 0 && html`<section class="card rise"><h2>Cupones por cumplir</h2>${open.map((v) => html`<div class="reward"><span class="emoji">${v.emoji}</span><div class="grow"><b>${v.name}</b><small class="muted">Canjeado por ${who(v.by, partner)} · ${fmtDay(L.ymd(new Date(v.ts)))}</small></div><button class="btn sm primary" onClick=${async () => { const r = await S.markVoucherDone(v.id); if (r.ok) toast('¡Cumplido!', { icon: '✅' }); }}>Hecho</button></div>`)}</section>`}
+    ${S.priceChangesForMe().length > 0 && html`<section class="card rise attn"><h2>Cambio de precio</h2>${S.priceChangesForMe().map((p) => html`<div class="idea">
+      <div class="idea-top"><span class="emoji">${p.emoji}</span><div class="grow"><b>${p.name}</b><small class="muted">${who(p.change.by, partner)} quiere cambiar el precio: <${Points} n=${p.cost} size=${13} /> → <${Points} n=${p.change.cost} size=${13} /></small></div></div>
+      <div class="idea-actions"><button class="btn sm primary" onClick=${() => price(p, 'accept-change')}>Aceptar ${p.change.cost}</button><button class="btn sm ghost" onClick=${() => price(p, 'decline-change')}>Dejarlo en ${p.cost}</button></div>
+    </div>`)}</section>`}
     <section class="card rise" style="--i:1">
       <h2>Canjear</h2>
-      ${active.length ? active.map((p) => html`<div class="reward">
+      ${active.length ? active.map((p) => html`<div class="reward-wrap"><div class="reward">
         <span class="emoji">${p.emoji}</span>
         <div class="grow"><b>${p.name}</b><small class="muted"><${Points} n=${p.cost} size=${13} />${p.note ? ` · ${p.note}` : ''}</small></div>
         <button class=${cx('btn sm', bal >= p.cost && 'primary')} disabled=${bal < p.cost} onClick=${() => redeem(p)}>${bal >= p.cost ? 'Canjear' : `Faltan ${p.cost - bal}`}</button>
+      </div>
+      ${p.change && p.change.by === uid
+        ? html`<div class="price-note">⏳ Propusiste ${p.change.cost} puntos${partner ? ` · ${partner.name} decide` : ''} <button class="link" onClick=${() => price(p, 'cancel-change')}>Cancelar</button></div>`
+        : !p.change && html`<button class="link muted price-link" onClick=${() => setChange(p)}><${Icon} name="pencil" size=${13} /> Pensármelo mejor · cambiar el precio</button>`}
       </div>`) : html`<${Empty} icon="🎁" title="Aún no hay premios" text="Un premio existe cuando uno lo propone y el otro lo acepta." action=${html`<button class="btn primary" onClick=${onIdeas}>Ir a Ideas</button>`} />`}
     </section>
+    ${change && html`<${CounterSheet} p=${change} title="Cambiar el precio" text=${`“${change.emoji} ${change.name}” cuesta ${change.cost} puntos. Si lo piensas mejor, propón otro precio: ${partner?.name || 'tu pareja'} tiene que aceptarlo y mientras tanto sigue valiendo el actual.`} cta="Proponer este precio" onClose=${() => setChange(null)} onSend=${(c) => { price(change, 'change', c); setChange(null); }} />`}
     <section class="card rise" style="--i:2">
       <h2>Cómo ganar puntos de amor</h2>
       <ul class="earn">
@@ -121,12 +137,12 @@ function ProposeSheet({ onClose }) {
   <//>`;
 }
 
-function CounterSheet({ p, onClose, onSend }) {
+function CounterSheet({ p, onClose, onSend, title = 'Contraoferta', text, cta = 'Enviar contraoferta' }) {
   const [cost, setCost] = useState(String(p.cost));
-  return html`<${Sheet} title="Contraoferta" onClose=${onClose}>
-    <p class="muted"><b>${p.emoji} ${p.name}</b> cuesta ${p.cost} puntos de amor. ¿Cuánto crees que debería costar?</p>
+  return html`<${Sheet} title=${title} onClose=${onClose}>
+    <p class="muted">${text || html`<b>${p.emoji} ${p.name}</b> cuesta ${p.cost} puntos de amor. ¿Cuánto crees que debería costar?`}</p>
     <${Stepper} value=${cost} onChange=${setCost} step=${10} min=${1} label="Costo" />
-    <button class="btn primary block lg" onClick=${() => onSend(L.num(cost))}>Enviar contraoferta</button>
+    <button class="btn primary block lg" onClick=${() => onSend(L.num(cost))}>${cta}</button>
   <//>`;
 }
 

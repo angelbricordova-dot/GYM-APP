@@ -409,9 +409,36 @@ async function postProposal(user, body) {
   return json(200, { proposal: p });
 }
 
+/** Un premio ya aceptado se puede renegociar: quien quiera pide un precio nuevo y el otro lo acepta o no. Mientras tanto sigue valiendo el precio actual. */
+async function changePrice(user, p, body) {
+  if (p.status !== 'accepted') return fail(409, 'Solo se puede cambiar el precio de un premio ya aceptado.');
+  const a = body.action;
+  const pending = p.change;
+  if (a === 'change') {
+    const cost = Math.round(Number(body.cost));
+    if (!(cost >= 1 && cost <= 9999)) return fail(400, 'Costo inválido.');
+    if (cost === p.cost) return fail(400, 'Ese ya es el precio actual.');
+    p.change = { by: user.id, cost, ts: Date.now() };
+  } else if (!pending) return fail(409, 'No hay un cambio de precio pendiente.');
+  else if (a === 'cancel-change') {
+    if (pending.by !== user.id) return fail(403, 'Ese cambio lo propuso tu pareja.');
+    delete p.change;
+  } else if (a === 'accept-change' || a === 'decline-change') {
+    if (pending.by === user.id) return fail(403, 'Ahora le toca decidir a tu pareja.');
+    if (a === 'accept-change') { p.history.push({ by: pending.by, cost: pending.cost, ts: Date.now(), change: true }); p.cost = pending.cost; }
+    delete p.change;
+  } else return fail(400, 'Acción inválida.');
+  p.updatedAt = Date.now();
+  await db.set(`proposal/${p.id}`, p);
+  const title = { change: `${first(user.name)} quiere cambiar el precio de ${p.emoji} ${p.name} a ${p.change?.cost} puntos`, 'accept-change': `${first(user.name)} aceptó el nuevo precio: ${p.emoji} ${p.name} ahora cuesta ${p.cost} puntos`, 'decline-change': `${first(user.name)} prefiere dejar ${p.emoji} ${p.name} en ${p.cost} puntos`, 'cancel-change': null }[a];
+  if (title) await tell(user, { type: 'prizes', title, body: a === 'change' ? `Ahora cuesta ${p.cost}. ¿Lo aceptas?` : p.name, url: '/?tab=rewards' });
+  return json(200, { proposal: p });
+}
+
 async function decideProposal(user, id, body) {
   const p = await db.get(`proposal/${id}`);
   if (!inSpace(p, await mySpace(user))) return fail(404, 'No existe esa propuesta.');
+  if (['change', 'accept-change', 'decline-change', 'cancel-change'].includes(body.action)) return changePrice(user, p, body);
   if (p.status !== 'pending') return fail(409, 'Esa propuesta ya fue resuelta.');
   if (p.lastBy === user.id) return fail(403, 'Ahora le toca decidir a tu pareja.');
   if (body.action === 'accept') { p.status = 'accepted'; p.decidedBy = user.id; }
@@ -493,6 +520,17 @@ async function penalizeMessage(user, id, body) {
   m.penalty = { points, by: user.id, ts: Date.now() };
   await db.set(key, m);
   await push.notify(m.from, { type: 'notes', title: points ? `${first(user.name)} te quitó ${points} puntos de amor` : `${first(user.name)} no te quitó ningún punto 💗`, body: m.text, url: '/?tab=together' });
+  return json(200, { message: m });
+}
+
+/** Estrella (favorito): cada quien marca las notas que quiere guardar. Las favoritas no se borran con “Borrar historial”. */
+async function starMessage(user, id) {
+  const key = await findKey('message/', id);
+  const m = key && (await db.get(key));
+  if (!inSpace(m, await mySpace(user))) return fail(404, 'No existe ese mensaje.');
+  m.starred = m.starred || [];
+  m.starred = m.starred.includes(user.id) ? m.starred.filter((x) => x !== user.id) : [...m.starred, user.id];
+  await db.set(key, m);
   return json(200, { message: m });
 }
 
@@ -740,7 +778,7 @@ async function clearHistory(user, body) {
     del.voucher = (await loadAll('voucher/')).filter((v) => v.status === 'done');
     del.proposal = (await loadAll('proposal/')).filter((p) => p.status === 'declined');
   }
-  if (kinds.has('notes')) del.message = (await loadAll('message/')).filter((m) => m.kind !== 'skip' || m.penalty); // los “hoy no fui” sin decidir se quedan
+  if (kinds.has('notes')) del.message = (await loadAll('message/')).filter((m) => !m.starred?.length && (m.kind !== 'skip' || m.penalty)); // se quedan las favoritas (⭐) y los “hoy no fui” sin decidir
   if (kinds.has('routines')) del.routine = (await loadAll('routine/')).filter((r) => r.status !== 'new');
   // puntos primero: lo que ya ganaron o perdieron no cambia
   for (const uid of sp.users) {
@@ -842,6 +880,7 @@ export default async function handler(req) {
     if (m === 'POST' && (r = path.match(/^\/challenges\/([^/]+)\/(start|evidence|review|cancel)$/))) return await challengeAction(user, r[1], r[2], req, url, r[2] === 'review' ? await body() : {});
     if (m === 'GET' && (r = path.match(/^\/challenges\/([^/]+)\/evidence$/))) return await getEvidence(user, r[1]);
     if (m === 'POST' && (r = path.match(/^\/messages\/([^/]+)\/like$/))) return await likeMessage(user, r[1]);
+    if (m === 'POST' && (r = path.match(/^\/messages\/([^/]+)\/star$/))) return await starMessage(user, r[1]);
     if (m === 'POST' && (r = path.match(/^\/messages\/([^/]+)\/penalty$/))) return await penalizeMessage(user, r[1], await body());
     if (m === 'POST' && (r = path.match(/^\/messages\/([^/]+)\/delete$/))) return await deleteMessage(user, r[1]);
     return fail(404, 'Ruta no encontrada.');

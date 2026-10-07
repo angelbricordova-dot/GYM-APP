@@ -75,3 +75,39 @@ test('borrar notas, premios y rutinas; los “hoy no fui” sin decidir se queda
   assert.ok(bank.some(([k, d]) => k === 'skip:2026-01-02' && d === -15));
   assert.ok(bank.some(([k, d]) => k.startsWith('challenge') && d === 30));
 });
+
+test('premio aceptado: pensármelo mejor y proponer otro precio (el otro lo acepta o no; mientras tanto vale el actual)', async () => {
+  const p = (await sync(A)).proposals.find((x) => x.status === 'accepted');
+  assert.equal(p.cost, 10);
+  const bad = (a, who, extra = {}) => call('POST', `/proposals/${p.id}`, { token: who.token, body: { action: a, ...extra } });
+  assert.equal((await bad('accept-change', B)).status, 409); // sin cambio pendiente
+  assert.equal((await bad('change', B, { cost: 10 })).status, 400); // mismo precio
+  assert.equal((await bad('change', B, { cost: 0 })).status, 400);
+  const r = await bad('change', B, { cost: 5 });
+  assert.equal(r.status, 200);
+  assert.deepEqual([r.data.proposal.cost, r.data.proposal.change.cost, r.data.proposal.change.by], [10, 5, B.uid]); // sigue en 10 hasta que acepten
+  assert.equal((await bad('accept-change', B)).status, 403); // no se aprueba a sí mismo
+  assert.equal((await bad('cancel-change', A)).status, 403);
+  const ok = await bad('accept-change', A);
+  assert.deepEqual([ok.data.proposal.cost, ok.data.proposal.change], [5, undefined]);
+  assert.equal(ok.data.proposal.history.at(-1).cost, 5);
+  // otro intento: ahora A pide 8 y B lo rechaza
+  await bad('change', A, { cost: 8 });
+  const no = await bad('decline-change', B);
+  assert.deepEqual([no.data.proposal.cost, no.data.proposal.change], [5, undefined]);
+  // y se puede retirar la propia propuesta
+  await bad('change', B, { cost: 3 });
+  assert.equal((await bad('cancel-change', B)).data.proposal.change, undefined);
+});
+
+test('estrella (favorito) en notas: cada quien marca las suyas y las favoritas no se borran con el historial', async () => {
+  const msgs = (await sync(A)).messages;
+  const hola = msgs.find((m) => m.text === 'hola') || (await call('POST', '/messages', { token: A.token, body: { text: 'guardar', kind: 'text' } })).data.message;
+  const s = await call('POST', `/messages/${hola.id}/star`, { token: B.token });
+  assert.deepEqual(s.data.message.starred, [B.uid]);
+  await call('POST', '/messages', { token: A.token, body: { text: 'se va', kind: 'text' } });
+  await call('POST', '/history/clear', { token: A.token, body: { kinds: ['notes'] } });
+  const left = (await sync(A)).messages.filter((m) => m.kind !== 'skip');
+  assert.deepEqual(left.map((m) => m.id), [hola.id]); // solo la favorita
+  assert.deepEqual((await call('POST', `/messages/${hola.id}/star`, { token: B.token })).data.message.starred, []); // alterna
+});

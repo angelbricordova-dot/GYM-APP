@@ -752,6 +752,11 @@ details.card[open] summary { margin-bottom: 8px; }
 .skip-warn p { margin: 0; font-size: 15px; }
 .skip-card { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--bad) 40%, transparent), var(--shadow); }
 .skip-status { position: relative; }
+.star-btn { min-width: 44px; height: 44px; }
+.star-btn.on { color: #f5a623; }
+.star-btn.on .heart-ic.pop { animation-duration: 700ms; }
+.price-link { display: inline-flex; align-items: center; gap: 5px; margin: -4px 0 6px 50px; padding: 4px 6px; font-size: 14px; }
+.price-note { margin: -2px 0 8px 50px; font-size: 14px; color: var(--text2); }
 .nopush { margin: 10px 2px 0; }
 .skip-note { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 10px 0 0; padding: 6px 6px 6px 14px; border-radius: 14px; background: color-mix(in srgb, var(--bad) 11%, transparent); color: var(--text2); font-size: 15px; }
 .coin-n b.neg { color: var(--bad); }
