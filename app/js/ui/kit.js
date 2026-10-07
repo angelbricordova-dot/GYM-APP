@@ -149,6 +149,9 @@ export function Ring({ value, max, size = 120, stroke = 12, color = 'var(--accen
 }
 
 /** Cuenta hacia el nuevo valor (los números que suben dan sensación de progreso). */
+/** “1 punto” / “5 puntos”. */
+export const puntos = (n) => `${n} ${Math.abs(n) === 1 ? 'punto' : 'puntos'}`;
+
 export function CountUp({ value, ms = 700, dec = 0 }) {
   const f = 10 ** dec;
   const [shown, setShown] = useState(value);
@@ -230,7 +233,7 @@ export function ToastHost() {
 
 // ---------- controles ----------
 export const Segmented = ({ options, value, onChange }) => html`<div class="seg" role="tablist">
-  ${options.map((o) => html`<button role="tab" class=${cx(value === o.id && 'on')} aria-selected=${value === o.id} onClick=${() => onChange(o.id)}>${o.label}${o.badge ? html`<b class="dot-badge">${o.badge}</b>` : null}</button>`)}
+  ${options.map((o) => html`<button type="button" role="tab" class=${cx(value === o.id && 'on')} aria-selected=${value === o.id} onClick=${() => onChange(o.id)}>${o.label}${o.badge ? html`<b class="dot-badge">${o.badge}</b>` : null}</button>`)}
 </div>`;
 
 const round = (n) => Math.round(n * 100) / 100;

@@ -1,7 +1,7 @@
 import { html, useState, useRef, useEffect } from '../../vendor/preact-htm.js';
 import * as S from '../store.js';
 import * as L from '../logic.js';
-import { getTheme, setTheme, accentVars } from '../theme.js';
+import { getTheme, setTheme, accentVars, soundOn, setSoundOn, playLike } from '../theme.js';
 import { Icon, Sheet, Avatar, Stepper, Field, Segmented, toast, cx } from './kit.js';
 import { pushSupport, currentSubscription, enablePush, disablePush, setPrefs, sendTest } from '../push.js';
 import { GoogleButton } from './google-button.js';
@@ -31,6 +31,7 @@ export function Profile() {
 
   const [danger, setDanger] = useState(null); // 'reset' | 'delete' | 'leave'
   const [joinOther, setJoinOther] = useState(false);
+  const [sound, setSound] = useState(soundOn());
 
   const link = async (credential) => {
     const r = await S.linkGoogle(credential);
@@ -57,6 +58,7 @@ export function Profile() {
       <div class="group pad">
         <${Segmented} value=${theme} onChange=${(t) => { setTheme(t); setThemeState(t); }} options=${[{ id: 'auto', label: 'Automático' }, { id: 'light', label: 'Día' }, { id: 'dark', label: 'Noche' }]} />
         <${ColorPicker} value=${me.color} onChange=${(c) => S.profile({ color: c })} />
+        <label class="check sound-toggle"><input type="checkbox" checked=${sound} onChange=${(e) => { setSoundOn(e.target.checked); setSound(e.target.checked); if (e.target.checked) playLike(); }} /><span>Sonidos (por ejemplo al dar un corazón)</span></label>
       </div>
       <p class="sec-f">Automático sigue el modo de tu teléfono. Tu color se ve en tu perfil, tus botones y en tus notas.</p>
 

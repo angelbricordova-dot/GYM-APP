@@ -53,3 +53,29 @@ let lastAccent = '#34d6a0';
 
 /** Vibración suave donde existe (Android). iOS no la permite desde la web. */
 export const haptic = (ms = 10) => { try { navigator.vibrate?.(ms); } catch { /* sin soporte */ } };
+
+// ---------- sonidos (sintetizados, sin archivos) ----------
+export const soundOn = () => { try { return localStorage.getItem('lindwyrm.sound') !== '0'; } catch { return true; } };
+export const setSoundOn = (on) => { try { localStorage.setItem('lindwyrm.sound', on ? '1' : '0'); } catch { /* sin storage */ } };
+let audio = null;
+/** Sonidito de “me gusta”: dos notas suaves que suben, con un brillo al final. Se llama desde un toque (iOS lo exige). */
+export function playLike() {
+  if (!soundOn()) return;
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === 'suspended') audio.resume();
+    const t0 = audio.currentTime + 0.01;
+    const note = (freq, at, dur, vol, type = 'sine') => {
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.type = type; o.frequency.setValueAtTime(freq, t0 + at);
+      g.gain.setValueAtTime(0.0001, t0 + at);
+      g.gain.exponentialRampToValueAtTime(vol, t0 + at + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
+      o.connect(g).connect(audio.destination);
+      o.start(t0 + at); o.stop(t0 + at + dur + 0.05);
+    };
+    note(784, 0, 0.32, 0.16);          // sol
+    note(1175, 0.11, 0.42, 0.15);      // re agudo
+    note(1568, 0.2, 0.55, 0.07, 'triangle'); // brillo
+  } catch { /* sin audio */ }
+}

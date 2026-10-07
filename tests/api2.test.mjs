@@ -142,3 +142,15 @@ test('“hoy no voy”: la nota llega a la pareja como tipo skip y el documento 
   assert.deepEqual(partnerView.suppLog['2026-10-06'], ['creatina']);
   assert.equal(partnerView.skips['2026-10-06'].reason, 'flojera');
 });
+
+test('retos: quien lo pone elige si se demuestra con foto, video o cualquiera', async () => {
+  const mk = async (proof) => (await call('POST', '/challenges', { token: A.token, body: { title: `reto ${proof}`, points: 10, proof } })).data.challenge;
+  const photo = await mk('photo'), video = await mk('video'), any = await mk('whatever');
+  assert.deepEqual([photo.proof, video.proof, any.proof], ['photo', 'video', 'any']);
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1]), mp4 = Buffer.from('0000001866747970', 'hex');
+  assert.equal((await call('POST', `/challenges/${photo.id}/evidence`, { token: B.token, raw: mp4, type: 'video/mp4' })).status, 400); // pidió foto
+  assert.equal((await call('POST', `/challenges/${photo.id}/evidence`, { token: B.token, raw: jpeg, type: 'image/jpeg' })).status, 200);
+  assert.equal((await call('POST', `/challenges/${video.id}/evidence`, { token: B.token, raw: jpeg, type: 'image/jpeg' })).status, 400); // pidió video
+  assert.equal((await call('POST', `/challenges/${video.id}/evidence`, { token: B.token, raw: mp4, type: 'video/mp4' })).status, 200);
+  assert.equal((await call('POST', `/challenges/${any.id}/evidence`, { token: B.token, raw: mp4, type: 'video/mp4' })).status, 200);
+});

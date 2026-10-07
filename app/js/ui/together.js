@@ -1,7 +1,7 @@
 import { html, useState, useEffect, useRef } from '../../vendor/preact-htm.js';
 import * as S from '../store.js';
 import * as L from '../logic.js';
-import { accentVars, haptic } from '../theme.js';
+import { accentVars, haptic, playLike } from '../theme.js';
 import { Icon, Flame, Avatar, Segmented, Empty, Sheet, toast, cx } from './kit.js';
 import { ChallengesPanel, NewChallengeSheet } from './challenges.js';
 import { RoutinesPanel } from './routines.js';
@@ -96,13 +96,17 @@ function Note({ n, mine, partner }) {
   const liked = (n.likes || []).includes(me);
   const [burst, setBurst] = useState(0);
   const lastTap = useRef(0);
-  const like = () => { if (!liked) { setBurst((b) => b + 1); haptic(); } S.likeMessage(n.id); };
+  const like = () => { if (!liked) { setBurst((b) => b + 1); haptic([12, 40, 18]); playLike(); } S.likeMessage(n.id); };
   // doble toque sobre la nota = corazón (si aún no lo tiene)
   const tap = (e) => { if (e.target.closest('button')) return; const t = Date.now(); if (t - lastTap.current < 320 && !liked) like(); lastTap.current = t; };
   const color = mine ? S.state.me.color : partner.doc?.color || '#ff5c93';
   const when = new Date(n.ts).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
-  return html`<article class=${cx('note', mine && 'mine', n.kind === 'skip' && 'skip')} style=${accentVars(color)} onClick=${tap}>
-    ${burst > 0 && html`<span class="like-burst" key=${burst} aria-hidden="true">${Array.from({ length: 8 }, (_, i) => { const a = (i * Math.PI) / 4, d = i % 2 ? 34 : 48; return html`<i style=${`--x:${(Math.cos(a) * d).toFixed(1)}px;--y:${(Math.sin(a) * d - 18).toFixed(1)}px;--s:${0.7 + (i % 3) * 0.25}`}>❤</i>`; })}</span>`}
+  const EMOJI = ['❤', '💗', '💕', '✨'];
+  return html`<article class=${cx('note', mine && 'mine', n.kind === 'skip' && 'skip', burst > 0 && 'bump')} key=${`n${n.id}-${burst}`} style=${accentVars(color)} onClick=${tap}>
+    ${burst > 0 && html`<span class="like-burst" key=${burst} aria-hidden="true"><i class="like-ring"></i>${Array.from({ length: 12 }, (_, i) => {
+      const a = (i / 12) * Math.PI * 2 + (i % 2) * 0.2, d = 46 + (i % 3) * 22;
+      return html`<i class="lb" style=${`--x:${(Math.cos(a) * d).toFixed(1)}px;--y:${(Math.sin(a) * d - 30).toFixed(1)}px;--r:${(i % 2 ? 1 : -1) * (20 + (i * 17) % 50)}deg;--s:${(0.8 + (i % 4) * 0.22).toFixed(2)};--dl:${(i % 6) * 55}ms`}>${EMOJI[i % EMOJI.length]}</i>`;
+    })}</span>`}
     ${n.kind === 'skip' && html`<span class="skip-tag">😔 ${mine ? 'Hoy no fui al gym' : 'Hoy no fue al gym'}</span>`}
     <p>${n.text}</p>
     ${n.kind === 'skip' && (n.penalty

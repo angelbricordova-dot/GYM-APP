@@ -66,7 +66,7 @@ export function MonthAnalysis({ doc, y, m, isMe = true }) {
   return html`<section class="card month rise">
     <div class="month-hero">
       <${Rings} rings=${rings} size=${156} stroke=${15}>
-        <b class="ring-big">${r.attended}</b><small>${r.attended === 1 ? 'día' : 'días'}</small>
+        <b class="ring-big">${r.attended}</b>
       <//>
       <ul class="ring-legend">
         <li style="--c:var(--accent)"><i></i><div><b>${r.attended}${fresh ? '' : html`<span>/${r.expected}</span>`}</b><small>${fresh ? 'días este mes' : 'días del mes'}</small></div></li>

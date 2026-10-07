@@ -1,7 +1,7 @@
 // Service worker: la app abre sin internet.
 // Red primero con caché de respaldo: con señal siempre ves la última versión; sin señal, la última guardada.
 // La API (/api) nunca se cachea aquí: los datos viven en el teléfono (localStorage / IndexedDB).
-const CACHE = 'lindwyrm-v9';
+const CACHE = 'lindwyrm-v10';
 const SHELL = [
   '/', '/index.html', '/styles.css', '/manifest.webmanifest', '/vendor/preact-htm.js',
   '/js/main.js', '/js/store.js', '/js/logic.js', '/js/photos.js', '/js/theme.js', '/js/google.js', '/js/push.js', '/js/invite.js',

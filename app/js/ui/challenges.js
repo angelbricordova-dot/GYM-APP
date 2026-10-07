@@ -32,7 +32,7 @@ export function ChallengeCard({ c, compact }) {
   let action = null;
   if (mine) {
     if (c.status === 'open') action = html`<button class="btn primary block" onClick=${start}><${Icon} name="play" size=${16} fill /> Iniciar reto</button>`;
-    else if (c.status === 'started') action = html`<button class="btn primary block" onClick=${() => setSheet('record')}><${Icon} name="video" size=${18} /> Enviar evidencia</button>`;
+    else if (c.status === 'started') action = html`<button class="btn primary block" onClick=${() => setSheet('record')}><${Icon} name=${c.proof === 'photo' ? 'camera' : 'video'} size=${18} /> ${c.proof === 'photo' ? 'Enviar foto' : c.proof === 'video' ? 'Enviar video' : 'Enviar evidencia'}</button>`;
     else if (c.status === 'rejected') action = html`<button class="btn primary block" onClick=${start}>Intentarlo de nuevo</button>`;
   } else if (c.status === 'submitted') action = html`<button class="btn primary block" onClick=${() => setSheet('review')}><${Icon} name="check" size=${18} sw=${2.6} /> Revisar evidencia</button>`;
   else if (['open', 'started', 'rejected'].includes(c.status)) action = html`<button class="btn tinted block" onClick=${cancel}>Cancelar reto</button>`;
@@ -46,7 +46,7 @@ export function ChallengeCard({ c, compact }) {
       <span class="ch-ic"><${Icon} name="target" size=${22} /></span>
       <div class="grow">
         <b>${c.title}</b>
-        <small class=${cx('muted', c.status === 'rejected' && 'warn')}>${sub}${late ? ` · de ${fmtDay(c.date)}` : ''}</small>
+        <small class=${cx('muted', c.status === 'rejected' && 'warn')}>${sub}${late ? ` · de ${fmtDay(c.date)}` : ''}${c.proof === 'photo' ? ' · 📷 con foto' : c.proof === 'video' ? ' · 🎥 con video' : ''}</small>
       </div>
       <${Points} n=${c.points} class=${cx(c.status === 'approved' && 'won')} />
     </div>
@@ -83,7 +83,8 @@ function EvidenceSheet({ c, onClose }) {
   const chunks = useRef([]);
   const timer = useRef(null);
   const file = useRef();
-  const [mode, setMode] = useState('video'); // video | photo
+  const proof = c.proof || 'any'; // lo que pidió quien puso el reto: photo | video | any
+  const [mode, setMode] = useState(proof === 'photo' ? 'photo' : 'video'); // video | photo
   const [facing, setFacing] = useState('user');
   const [phase, setPhase] = useState('idle'); // idle | count | rec | done
   const [count, setCount] = useState(3);
@@ -97,7 +98,21 @@ function EvidenceSheet({ c, onClose }) {
   const canRecord = typeof MediaRecorder !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
   const canCamera = !!navigator.mediaDevices?.getUserMedia;
 
-  const stopCamera = () => { stream.current?.getTracks().forEach((t) => t.stop()); stream.current = null; };
+  const liveStream = useRef(null); // lo que se ve en pantalla: solo la imagen, sin audio (así la vista previa no se queda negra ni da eco)
+  const [, setCamReady] = useState(0);
+  const stopCamera = () => { stream.current?.getTracks().forEach((t) => t.stop()); stream.current = null; liveStream.current = null; if (live.current) live.current.srcObject = null; };
+  /** Conecta la cámara al <video>: atributos antes que el flujo, y se reintenta si Safari lo deja en negro. */
+  const attachLive = () => {
+    const el = live.current, s = liveStream.current;
+    if (!el || !s || el.srcObject === s) return;
+    el.muted = true; el.setAttribute('muted', ''); el.playsInline = true; el.setAttribute('playsinline', '');
+    el.srcObject = s;
+    const go = () => el.play().catch(() => {});
+    el.onloadedmetadata = go;
+    go();
+    setTimeout(() => { if (live.current === el && el.srcObject === s && !el.videoWidth) { el.srcObject = null; el.srcObject = s; go(); } }, 1200);
+  };
+  useEffect(() => { attachLive(); }); // tras cada render: si el <video> existe y aún no tiene la cámara, se conecta
   useEffect(() => () => { stopCamera(); clearInterval(timer.current); }, []);
   useEffect(() => () => url && URL.revokeObjectURL(url), [url]);
 
@@ -115,7 +130,9 @@ function EvidenceSheet({ c, onClose }) {
       } else s = await navigator.mediaDevices.getUserMedia({ video, audio: false });
       if (off) { s.getTracks().forEach((t) => t.stop()); return; }
       stream.current = s;
-      if (live.current) { live.current.srcObject = s; live.current.play().catch(() => {}); }
+      liveStream.current = new MediaStream(s.getVideoTracks());
+      attachLive();
+      setCamReady((n) => n + 1);
     };
     open().catch(() => setErr('No pude abrir la cámara. Revisa el permiso del navegador o elige un archivo del carrete.'));
     return () => { off = true; };
@@ -166,7 +183,9 @@ function EvidenceSheet({ c, onClose }) {
     if (!f) return;
     setErr('');
     try {
-      if (f.type.startsWith('image/')) finish(await processImage(f, { max: 1080, quality: 0.8 }));
+      if (f.type.startsWith('image/') && proof === 'video') setErr('Este reto se demuestra con un video.');
+      else if (!f.type.startsWith('image/') && proof === 'photo') setErr('Este reto se demuestra con una foto.');
+      else if (f.type.startsWith('image/')) finish(await processImage(f, { max: 1080, quality: 0.8 }));
       else if (f.size > MAX_MB * 1e6) setErr(`Ese video pesa ${(f.size / 1e6).toFixed(1)} MB (máximo ${MAX_MB}). Grábalo aquí en la app, que lo comprime.`);
       else finish(f, true);
     } catch { setErr('No pude leer ese archivo.'); }
@@ -183,8 +202,8 @@ function EvidenceSheet({ c, onClose }) {
   const isVideo = blob?.type.startsWith('video');
   const noCam = !canCamera || err.startsWith('No pude abrir');
   return html`<${Sheet} title="Tu evidencia" full onClose=${onClose}>
-    <p class="muted"><b>${c.title}</b> · ${c.points} puntos de amor. Demuéstralo con un video o con una foto.</p>
-    ${phase === 'idle' && html`<${Segmented} value=${mode} onChange=${(m) => { setMode(m); setErr(''); }} options=${[{ id: 'video', label: '🎥 Video' }, { id: 'photo', label: '📷 Foto' }]} />`}
+    <p class="muted"><b>${c.title}</b> · ${c.points} puntos de amor. ${{ photo: 'Demuéstralo con una foto.', video: 'Demuéstralo con un video (hasta 20 s).', any: 'Demuéstralo con un video o con una foto.' }[proof]}</p>
+    ${phase === 'idle' && proof === 'any' && html`<${Segmented} value=${mode} onChange=${(m) => { setMode(m); setErr(''); }} options=${[{ id: 'video', label: '🎥 Video' }, { id: 'photo', label: '📷 Foto' }]} />`}
     <div class=${cx('cam', phase)}>
       ${phase === 'done'
         ? (isVideo
@@ -208,7 +227,7 @@ function EvidenceSheet({ c, onClose }) {
           <button class="icon-btn lg" onClick=${() => file.current.click()} aria-label="Elegir del carrete"><${Icon} name="image" size=${20} /></button>
         </div>
         <p class="muted small center">${phase === 'rec' ? 'Grabando… toca el botón para detener (máx. 20 s)' : mode === 'photo' ? 'Toca el círculo para tomar la foto. A la derecha, elige una del carrete.' : 'Toca el círculo para grabar (cuenta de 3). A la derecha, elige un video o foto del carrete.'}</p>`}
-    <input ref=${file} type="file" accept=${mode === 'photo' ? 'image/*' : 'image/*,video/*'} hidden onChange=${pick} />
+    <input ref=${file} type="file" accept=${proof === 'photo' || mode === 'photo' ? 'image/*' : proof === 'video' ? 'video/*' : 'image/*,video/*'} hidden onChange=${pick} />
   <//>`;
 }
 
@@ -256,11 +275,12 @@ export function NewChallengeSheet({ onClose }) {
   const partner = S.state.partner;
   const [title, setTitle] = useState('');
   const [points, setPoints] = useState('20');
+  const [proof, setProof] = useState('any');
   const [busy, setBusy] = useState(false);
   const send = async (e) => {
     e.preventDefault();
     setBusy(true);
-    const r = await S.createChallenge({ title, points: L.num(points), date: L.ymd() });
+    const r = await S.createChallenge({ title, points: L.num(points), proof, date: L.ymd() });
     setBusy(false);
     if (r.ok) { toast(`Reto enviado a ${partner?.name}`, { icon: '🎯' }); onClose(); } else toast(r.data.error, { icon: '⚠️' });
   };
@@ -269,7 +289,8 @@ export function NewChallengeSheet({ onClose }) {
     <form class="stack" onSubmit=${send}>
       <${Field} label="El reto de hoy"><input value=${title} onInput=${(e) => setTitle(e.target.value)} maxlength="80" required placeholder="Ej. 10 flexiones" /><//>
       <${Field} label="Puntos de amor que gana al cumplirlo"><${Stepper} value=${points} onChange=${setPoints} step=${5} min=${1} label="Puntos" /><//>
-      <p class="muted small">Tendrá que grabarse o enviar una foto como evidencia. Tú decides si lo aprueban.</p>
+      <div class="field"><span>¿Cómo lo demuestra?</span><${Segmented} value=${proof} onChange=${setProof} options=${[{ id: 'photo', label: '📷 Foto' }, { id: 'video', label: '🎥 Video' }, { id: 'any', label: 'Cualquiera' }]} /></div>
+      <p class="muted small">${{ photo: 'Tendrá que mandar una foto.', video: 'Tendrá que grabarse en video.', any: 'Podrá mandar una foto o un video.' }[proof]} Tú decides si lo aprueban.</p>
       <button class="btn primary block lg" disabled=${busy || !title.trim()}>${busy ? 'Enviando…' : 'Enviar reto'}</button>
     </form>
   <//>`;

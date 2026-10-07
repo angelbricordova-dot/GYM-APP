@@ -1,7 +1,7 @@
 import { html, useState } from '../../vendor/preact-htm.js';
 import * as S from '../store.js';
 import * as L from '../logic.js';
-import { Icon, Flame, Avatar, Heart, Points, CountUp, toast, cx, fmtKg, fmtShort, fmtDur } from './kit.js';
+import { Icon, Flame, Avatar, Heart, Points, CountUp, puntos, toast, cx, fmtKg, fmtShort, fmtDur } from './kit.js';
 import { openScreen, goTab } from './nav.js';
 import { beginWorkout } from './workout.js';
 import { ChallengeCard, NewChallengeSheet } from './challenges.js';
@@ -51,7 +51,12 @@ export function Today() {
 
     <button class=${cx('card points-card rise', bal < 0 && 'in-debt')} style="--i:4" onClick=${() => goTab('rewards')}>
       <span class="points-ic"><${Heart} size=${26} /></span>
-      <div class="grow"><small class="muted">${bal < 0 ? 'Tienes una deuda de' : 'Puntos de amor'}</small><b class=${cx('points-n', bal < 0 && 'neg')}><${CountUp} value=${bal < 0 ? -bal : bal} />${bal < 0 && html`<span class="debt-unit">puntos</span>`}</b></div>
+      <div class="grow">
+        ${bal < 0
+          ? html`<small class="debt-line"><span class="debt-badge">Deuda</span> Tienes una deuda de ${puntos(-bal)}</small>`
+          : html`<small class="muted">Puntos de amor</small>`}
+        <b class=${cx('points-n', bal < 0 && 'neg')}><${CountUp} value=${bal} /></b>
+      </div>
       <small class="muted next-txt">${bal < 0 ? 'Se paga con tus próximos puntos' : nextReward(bal)}</small>
       <${Icon} name="right" size=${16} class="chev" />
     </button>

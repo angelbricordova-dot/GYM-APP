@@ -522,7 +522,8 @@ async function postChallenge(user, body) {
   const points = Math.round(Number(body.points));
   if (!title || !(points >= 1 && points <= 500)) return fail(400, 'Escribe el reto y unos puntos entre 1 y 500.');
   const date = /^\d{4}-\d{2}-\d{2}$/.test(body.date || '') ? body.date : new Date().toISOString().slice(0, 10);
-  const c = { id: randomUUID(), space: sp.id, ts: Date.now(), from: user.id, to, title, detail: clean(body.detail, 140), points, date, status: 'open', evidence: null };
+  const proof = ['photo', 'video'].includes(body.proof) ? body.proof : 'any'; // cómo debe demostrarlo: foto, video o cualquiera
+  const c = { id: randomUUID(), space: sp.id, ts: Date.now(), from: user.id, to, title, proof, detail: clean(body.detail, 140), points, date, status: 'open', evidence: null };
   await db.set(challengeKey(c), c);
   await push.notify(to, { type: 'challenges', title: `${first(user.name)} te retó 🎯`, body: `${title} · ${points} puntos de amor`, url: '/?tab=today' });
   return json(200, { challenge: c });
@@ -545,6 +546,8 @@ async function challengeAction(user, id, action, req, url, body) {
     const buf = Buffer.from(await req.arrayBuffer());
     if (buf.length > MAX_EVIDENCE) return fail(413, 'El archivo pesa demasiado (máx. 5 MB). Graba un video más corto.');
     if (type === 'image/jpeg' && (buf[0] !== 0xff || buf[1] !== 0xd8)) return fail(400, 'Foto inválida.');
+    if (c.proof === 'photo' && type.startsWith('video')) return fail(400, 'Este reto se demuestra con una foto.');
+    if (c.proof === 'video' && type.startsWith('image')) return fail(400, 'Este reto se demuestra con un video.');
     await db.setBin(`evidence/${c.id}`, buf, type);
     c.evidence = { kind: type.startsWith('video') ? 'video' : 'photo', type, ts: Date.now() };
     c.status = 'submitted'; c.note = '';
