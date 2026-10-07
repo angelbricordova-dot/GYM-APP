@@ -79,8 +79,8 @@ export function createPush(db) {
         try {
           // Apple no usa la urgencia: se deja en “normal”; en Android (Google) “high” despierta el teléfono
           const opts = { vapidDetails, TTL: 86_400, urgency: /apple\.com/.test(sub.endpoint) ? 'normal' : 'high', timeout: TIMEOUT_MS };
-          await withTimeout(_push.send(sub, payload, opts), TIMEOUT_MS + 500);
-          return { sub, ok: true };
+          const res = await withTimeout(_push.send(sub, payload, opts), TIMEOUT_MS + 500);
+          return { sub, ok: true, status: res?.statusCode || 201 };
         } catch (e) {
           return { sub, ok: false, status: e.statusCode || 0, msg: String(e.body || e.message || e).slice(0, 160) };
         }
@@ -93,7 +93,8 @@ export function createPush(db) {
       if (bad) { console.error('push falló:', new URL(bad.sub.endpoint).host, bad.status, bad.msg); user.pushError = { ts: Date.now(), status: bad.status, msg: bad.msg }; dirty = true; }
       else if (user.pushError) { delete user.pushError; dirty = true; }
       if (dirty) await db.set(`user/${user.id}`, user);
-      return { sent, failed: results.length - sent, error: bad ? { status: bad.status, msg: bad.msg } : null };
+      const devices = results.map((r) => ({ host: new URL(r.sub.endpoint).host, ok: r.ok, status: r.status || 0 }));
+      return { sent, failed: results.length - sent, devices, error: bad ? { status: bad.status, msg: bad.msg } : null };
     } catch (e) {
       console.error('push:', e.message);
       return { sent: 0, error: { status: 0, msg: e.message } };

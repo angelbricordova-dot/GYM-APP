@@ -134,6 +134,19 @@ test('push: prueba con retraso, urgencia según el servicio (Apple normal, Googl
   await call('POST', '/push/unsubscribe', { token: A.token, body: { endpoint: apple.endpoint } });
 });
 
+test('push: comprobar si este teléfono está registrado y limpiar todos los registros viejos', async () => {
+  await call('POST', '/push/subscribe', { token: A.token, body: { subscription: sub('A5') } });
+  await call('POST', '/push/subscribe', { token: A.token, body: { subscription: sub('A6') } });
+  const yes = await call('POST', '/push/check', { token: A.token, body: { endpoint: sub('A5').endpoint } });
+  assert.equal(yes.data.registered, true);
+  assert.equal((await call('POST', '/push/check', { token: A.token, body: { endpoint: 'https://push.example/otro' } })).data.registered, false);
+  const ok = await call('POST', '/push/test', { token: A.token });
+  assert.ok(Array.isArray(ok.data.devices) && ok.data.devices.every((d) => d.ok)); // detalle por dispositivo
+  assert.equal((await call('POST', '/push/unsubscribe', { token: A.token, body: { all: true } })).status, 200);
+  assert.equal((await call('GET', '/sync', { token: A.token })).data.account.push.devices, 0);
+  assert.equal((await call('POST', '/push/check', { token: A.token, body: { endpoint: sub('A5').endpoint } })).data.registered, false);
+});
+
 test('recordatorio diario: a la hora local, una vez, solo si no entrenó', async () => {
   await call('POST', '/push/subscribe', { token: B.token, body: { subscription: sub('B3') } });
   await call('POST', '/push/prefs', { token: B.token, body: { reminder: true, reminderHour: 18 } });

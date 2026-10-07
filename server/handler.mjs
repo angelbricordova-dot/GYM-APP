@@ -737,7 +737,14 @@ async function joinOther(user, body) {
 async function pushRoutes(user, path, body, method) {
   if (method === 'GET' && path === '/push/key') return json(200, { key: await push.publicKey() });
   if (path === '/push/subscribe') return (await push.subscribe(user, body.subscription)) ? json(200, { ok: true }) : fail(400, 'Suscripción inválida.');
-  if (path === '/push/unsubscribe') { await push.unsubscribe(user, String(body.endpoint || '')); return json(200, { ok: true }); }
+  if (path === '/push/unsubscribe') {
+    if (body.all) { const u = await db.get(`user/${user.id}`); u.push = []; delete u.pushError; await db.set(`user/${user.id}`, u); return json(200, { ok: true }); } // borra también los registros viejos que ya no existen en el teléfono
+    await push.unsubscribe(user, String(body.endpoint || '')); return json(200, { ok: true });
+  }
+  if (path === '/push/check') { // ¿este teléfono (su dirección de suscripción) está en la lista del servidor?
+    const u = await db.get(`user/${user.id}`);
+    return json(200, { registered: (u.push || []).some((s) => s.endpoint === String(body.endpoint || '')), devices: (u.push || []).length });
+  }
   if (path === '/push/prefs') return json(200, { prefs: await push.setPrefs(user, body) });
   if (path === '/push/test') {
     const fresh = await db.get(`user/${user.id}`);
@@ -746,8 +753,9 @@ async function pushRoutes(user, path, body, method) {
     const delay = Math.min(5, Math.max(0, Math.round(Number(body.delay) || 0)));
     if (delay) await new Promise((r) => setTimeout(r, delay * 1000));
     const r = await push.notify(user.id, { title: 'Lindwyrm', body: '¡Las notificaciones funcionan! 💗', url: '/', tag: 'test' });
-    if (r.sent) return json(200, { ok: true, sent: r.sent });
+    if (r.sent) return json(200, { ok: true, sent: r.sent, devices: r.devices });
     const why = r.error ? ` El servicio de avisos respondió ${r.error.status || 'sin respuesta'}${r.error.msg ? ` (${r.error.msg})` : ''}.` : '';
+    // (r.devices lleva el detalle por dispositivo)
     return fail(409, `No se pudo enviar.${why} Toca “Reparar notificaciones” y vuelve a probar.`);
   }
   return fail(404, 'Ruta no encontrada.');

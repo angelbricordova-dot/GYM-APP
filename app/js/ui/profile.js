@@ -3,7 +3,7 @@ import * as S from '../store.js';
 import * as L from '../logic.js';
 import { getTheme, setTheme, accentVars, soundOn, setSoundOn, playLike } from '../theme.js';
 import { Icon, Sheet, Avatar, Stepper, Field, Segmented, toast, cx } from './kit.js';
-import { pushSupport, currentSubscription, enablePush, disablePush, repairPush, setPrefs, sendTest, serviceOf } from '../push.js';
+import { pushSupport, currentSubscription, enablePush, disablePush, repairPush, setPrefs, sendTest, serviceOf, localTest, serverHasMe } from '../push.js';
 import { GoogleButton } from './google-button.js';
 import { AvatarCropper } from './cropper.js';
 import { JoinOtherSheet } from './link.js';
@@ -178,8 +178,10 @@ function Notifications({ acc }) {
   const prefs = acc.push?.prefs || { challenges: true, notes: true, workouts: true, routines: true, prizes: true, reminder: false, reminderHour: 18 };
   const [on, setOn] = useState(null); // este teléfono está suscrito
   const [busy, setBusy] = useState(false);
-  const [svc, setSvc] = useState('');
-  useEffect(() => { currentSubscription().then((s) => { setOn(!!s && Notification.permission === 'granted'); setSvc(serviceOf(s?.endpoint)); }).catch(() => setOn(false)); }, []);
+  const [diag, setDiag] = useState(null); // { local, registered, devices, endpoint }
+  const refreshDiag = () => serverHasMe().then(setDiag).catch(() => setDiag({ local: false, registered: false, devices: null }));
+  useEffect(() => { currentSubscription().then((s) => setOn(!!s && Notification.permission === 'granted')).catch(() => setOn(false)); refreshDiag(); }, []);
+  const svc = serviceOf(diag?.endpoint);
 
   if (sup.needsInstall) {
     return html`<div class="group pad"><b>Instala la app para recibir avisos</b>
@@ -194,6 +196,7 @@ function Notifications({ acc }) {
     if (want) {
       const r = await enablePush();
       setOn(r.ok);
+      refreshDiag();
       if (!r.ok) toast(r.error, { icon: '⚠️' }); else toast('Notificaciones activadas', { icon: '🔔' });
     } else await disablePush();
     setBusy(false);
@@ -203,14 +206,22 @@ function Notifications({ acc }) {
   const test = async () => {
     toast('Ahora cierra la app o bloquea el teléfono', { icon: '🔔', body: 'La notificación de prueba llega en 5 segundos', ms: 5500 });
     const r = await sendTest(5);
-    if (!r.ok) toast(r.data.error, { icon: '⚠️', ms: 8000 });
+    if (!r.ok) return toast(r.data.error, { icon: '⚠️', ms: 9000 });
+    // qué respondió cada servicio: si “aceptó” y no aparece, el problema está en el teléfono (permisos, modo concentración…)
+    const det = (r.data.devices || []).map((d) => `${serviceOf(`https://${d.host}`)} ${d.ok ? `aceptó (${d.status})` : `rechazó (${d.status || 'sin respuesta'})`}`).join(' · ');
+    toast('Enviada desde el servidor', { icon: '📨', body: det || 'Debería llegarte en segundos', ms: 9000 });
+  };
+  const local = async () => {
+    try { await localTest(); toast('Listo: debería verse una notificación', { icon: '🔔', body: 'Si no la ves, revisa Ajustes → Notificaciones → Lindwyrm (y el Modo de concentración)', ms: 8000 }); }
+    catch (e) { toast(`El teléfono no pudo mostrarla (${e?.name || 'error'})`, { icon: '⚠️', ms: 8000 }); }
   };
   const repair = async () => {
     setBusy(true);
     const r = await repairPush();
     setBusy(false);
     setOn(r.ok);
-    toast(r.ok ? 'Listo: este teléfono quedó registrado de nuevo' : r.error, { icon: r.ok ? '🔔' : '⚠️' });
+    refreshDiag();
+    toast(r.ok ? 'Listo: este teléfono quedó registrado de nuevo' : r.error, { icon: r.ok ? '🔔' : '⚠️', ms: r.ok ? undefined : 9000 });
   };
   const devices = acc.push?.devices ?? 0;
   const perr = acc.push?.error;
@@ -223,7 +234,13 @@ function Notifications({ acc }) {
       <label class="row switch-row"><div class="grow"><b>Recordatorio diario</b><small class="muted">Si aún no entrenaste, te aviso a esta hora</small></div><input type="checkbox" checked=${prefs.reminder} onChange=${(e) => setPrefs({ reminder: e.target.checked })} /></label>
       ${prefs.reminder && html`<div class="row static"><div class="grow"><b>Hora del recordatorio</b><small class="muted">${String(hour).padStart(2, '0')}:00 (hora de tu teléfono)</small></div><${Stepper} value=${hour} onChange=${(v) => setPrefs({ reminderHour: Math.max(0, Math.min(23, Math.round(L.num(v)))) })} label="Hora" /></div>`}
       <button class="row" onClick=${test}><span class="lead"><${Icon} name="send" size=${18} /></span><div class="grow"><b>Enviar una notificación de prueba</b><small class="muted">Llega en 5 s: cierra la app o bloquea el teléfono · ${devices} ${devices === 1 ? 'dispositivo registrado' : 'dispositivos registrados'}</small></div></button>
-      <div class="row static"><span class="lead"><${Icon} name="info" size=${18} /></span><div class="grow"><b>Diagnóstico</b><small class="muted">Servicio: ${svc || '—'} · Permiso: ${sup.permission === 'granted' ? 'concedido' : sup.permission} · App instalada: ${sup.standalone ? 'sí' : 'no'}</small></div></div>
+      <div class="row static"><span class="lead"><${Icon} name="info" size=${18} /></span><div class="grow"><b>Diagnóstico</b>
+        <small class="muted">Permiso: ${sup.permission === 'granted' ? 'concedido' : sup.permission} · App instalada: ${sup.standalone ? 'sí' : 'no'}</small>
+        <small class="muted">Suscripción de este teléfono: ${diag ? (diag.local ? `sí (${svc})` : 'NO tiene') : '…'}</small>
+        <small class="muted">Registrado en el servidor: ${diag ? (diag.registered ? 'sí' : 'NO') : '…'}</small>
+        ${diag && (!diag.local || !diag.registered) && html`<small class="warn">→ Toca “Reparar notificaciones”.</small>`}
+      </div></div>
+      <button class="row" onClick=${local}><span class="lead"><${Icon} name="bolt" size=${18} /></span><div class="grow"><b>Probar en este teléfono</b><small class="muted">Sin servidor: muestra una notificación local al instante</small></div></button>
       ${(perr || devices === 0) && html`<div class="row static"><span class="lead tint-rose">⚠️</span><div class="grow"><b>${devices === 0 ? 'Este teléfono no está registrado' : 'El último aviso no se pudo entregar'}</b><small class="muted">${perr ? `El servicio de avisos respondió ${perr.status || 'sin respuesta'}${perr.msg ? ` (${perr.msg})` : ''}. ` : ''}Toca “Reparar” para registrarlo de nuevo.</small></div></div>`}
       <button class="row" onClick=${repair} disabled=${busy}><span class="lead"><${Icon} name="repeat" size=${18} /></span><div class="grow"><b>Reparar notificaciones</b><small class="muted">Vuelve a registrar este teléfono si dejaron de llegar</small></div></button>`}
   </div>`;

@@ -1,7 +1,7 @@
 // Service worker: la app abre sin internet.
 // Red primero con caché de respaldo: con señal siempre ves la última versión; sin señal, la última guardada.
 // La API (/api) nunca se cachea aquí: los datos viven en el teléfono (localStorage / IndexedDB).
-const CACHE = 'lindwyrm-v13';
+const CACHE = 'lindwyrm-v14';
 const SHELL = [
   '/', '/index.html', '/styles.css', '/manifest.webmanifest', '/vendor/preact-htm.js',
   '/js/main.js', '/js/store.js', '/js/logic.js', '/js/photos.js', '/js/theme.js', '/js/google.js', '/js/push.js', '/js/invite.js',
@@ -11,7 +11,8 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // Cada archivo por separado: si uno falla, el service worker se instala igual (con addAll un solo fallo lo cancelaba todo y sin service worker no hay notificaciones).
+  e.waitUntil(caches.open(CACHE).then((c) => Promise.allSettled(SHELL.map((u) => c.add(u)))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -36,11 +37,11 @@ self.addEventListener('fetch', (e) => {
 // Siempre se muestra algo al recibir un push (iOS revoca la suscripción si no).
 self.addEventListener('push', (e) => {
   let d = {};
-  try { d = e.data.json(); } catch { d = { body: e.data?.text() }; }
-  e.waitUntil(self.registration.showNotification(d.title || 'Lindwyrm', {
-    body: d.body || '', icon: d.icon || '/icons/icon-192.png', badge: d.badge || '/icons/icon-192.png',
-    tag: d.tag || 'lindwyrm', renotify: true, data: { url: d.url || '/' },
-  }));
+  try { d = e.data.json(); } catch { try { d = { body: e.data?.text() }; } catch { d = {}; } }
+  // Opciones mínimas y probadas en iOS; si el teléfono rechaza algo, se reintenta con lo más básico (siempre hay que mostrar algo).
+  const show = () => self.registration.showNotification(d.title || 'Lindwyrm', { body: d.body || '', icon: d.icon || '/icons/icon-192.png', tag: d.tag || undefined, data: { url: d.url || '/' } })
+    .catch(() => self.registration.showNotification(d.title || 'Lindwyrm', { body: d.body || '' }));
+  e.waitUntil(show());
 });
 
 // Al tocarla: enfoca la app si ya está abierta (y la lleva a la sección) o la abre.
