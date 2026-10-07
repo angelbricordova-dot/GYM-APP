@@ -19,6 +19,22 @@ const OVERLAYS = { workout: Workout, checkin: CheckIn, profile: Profile, partner
 // Cinco secciones, una palabra cada una (guía de iOS: pocas pestañas, etiquetas cortas, la barra solo navega).
 const TABS = [['today', 'home', 'Hoy'], ['train', 'dumbbell', 'Entrenar'], ['progress', 'chart', 'Progreso'], ['together', 'users', 'Juntos'], ['rewards', 'heart', 'Puntos']];
 
+/** Barra de pestañas: además del toque, se puede deslizar el dedo de una pestaña a otra (como la barra de iOS). */
+let scrub = null;
+const scrubStart = (e) => { scrub = { x: e.clientX, on: false }; };
+const scrubMove = (e) => {
+  if (!scrub) return;
+  if (!scrub.on) {
+    if (Math.abs(e.clientX - scrub.x) < 8) return;
+    scrub.on = true;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* sin captura */ }
+  }
+  const r = e.currentTarget.getBoundingClientRect();
+  const i = Math.max(0, Math.min(TABS.length - 1, Math.floor(((e.clientX - r.left) / r.width) * TABS.length)));
+  if (TABS[i][0] !== nav.tab) { goTab(TABS[i][0]); navigator.vibrate?.(8); }
+};
+const scrubEnd = () => { scrub = null; };
+
 export function App() {
   const st = useApp();
   const [, tick] = useState(0);
@@ -58,7 +74,7 @@ export function App() {
     ${st.draft && !Overlay && nav.tab !== 'train' && html`<button class="mini-workout" onClick=${() => openScreen('workout')}>
       <i class="live-dot"></i><span class="grow"><b>Entreno en curso</b><small>${fmtDur(Math.floor((Date.now() - st.draft.startedAt) / 1000))} · ${st.draft.exercises.length} ejercicios</small></span><b class="mw-go">Continuar</b>
     </button>`}
-    <nav class="tabbar" aria-label="Navegación">
+    <nav class="tabbar" aria-label="Navegación" onPointerDown=${scrubStart} onPointerMove=${scrubMove} onPointerUp=${scrubEnd} onPointerCancel=${scrubEnd}>
       ${TABS.map(([id, icon, label]) => html`<button class=${cx('tab', nav.tab === id && 'on')} onClick=${() => goTab(id)} aria-current=${nav.tab === id ? 'page' : null}>
         <span class="tab-ic"><${Icon} name=${icon} size=${24} sw=${nav.tab === id ? 2.1 : 1.7} fill=${nav.tab === id ? 0.2 : 0} />${badge[id] > 0 && html`<b class="badge">${badge[id]}</b>`}</span>
         <span class="tab-lb">${label}</span>
