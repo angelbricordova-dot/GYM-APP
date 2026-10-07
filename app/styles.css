@@ -902,3 +902,6 @@ button.mo-cell:disabled { opacity: 1; }
 .react-pill.star-btn.on { background: color-mix(in srgb, #f5a623 16%, var(--s2)); }
 .react-pill.del { min-width: 40px; padding: 0; color: var(--text3); background: transparent; }
 @media (prefers-reduced-motion: reduce) { .bubble.bump { animation: none; } }
+
+.later-note { margin: 4px 0 8px; font-size: 14px; color: var(--muted); }
+.chips.wrap { flex-wrap: wrap; overflow: visible; margin-bottom: 8px; }

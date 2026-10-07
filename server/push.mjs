@@ -101,10 +101,35 @@ export function createPush(db) {
     }
   }
 
+  /** “Lo haré más tarde”: el día que estimó, a partir de las 9 de su hora, se le recuerda el premio una sola vez. */
+  async function runLaterReminders(meta, now) {
+    let sent = 0;
+    for (const key of await db.list('voucher/')) {
+      const v = await db.get(key);
+      if (!v?.later?.date || v.status !== 'open' || v.laterNotified) continue;
+      const sp = (meta?.spaces || []).find((x) => x.id === (v.space || 'main'));
+      const provider = sp?.users.find((id) => id !== v.by);
+      const user = provider && (await db.get(`user/${provider}`));
+      if (!user) continue;
+      let hour, date;
+      try {
+        const tz = user.doc.tz || 'UTC';
+        hour = Number(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hourCycle: 'h23', timeZone: tz }).format(now));
+        date = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now);
+      } catch { continue; }
+      if (date < v.later.date || (date === v.later.date && hour < 9)) continue;
+      v.laterNotified = Date.now();
+      await db.set(key, v);
+      const r = await notify(provider, { type: 'prizes', title: `🎁 Hoy toca cumplir ${v.emoji} ${v.name}`, body: 'Dijiste que lo harías por estas fechas. Cuando lo hagas, toca “Lo hice”.', url: '/?tab=rewards', tag: `later-${v.id}` });
+      if (r.sent) sent++;
+    }
+    return sent;
+  }
+
   /** Recordatorio diario: una vez al día, a la hora local elegida, si aún no entrenaste. Se corre cada hora (función programada). */
   async function runReminders(now = new Date()) {
     const meta = await db.get('meta');
-    let sent = 0;
+    let sent = await runLaterReminders(meta, now);
     for (const id of meta?.users || []) {
       const user = await db.get(`user/${id}`);
       const prefs = { ...DEFAULT_PREFS, ...user?.pushPrefs };

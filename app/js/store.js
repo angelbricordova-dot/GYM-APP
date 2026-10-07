@@ -361,7 +361,11 @@ export const voucherAction = (id, action) => act('POST', `/vouchers/${id}/${acti
 /** Ideas de premio que esperan mi respuesta (propuestas nuevas, contraofertas y cambios de precio). */
 export const ideasForMe = () => [...state.proposals.filter((p) => p.status === 'pending' && p.lastBy !== state.auth?.uid), ...priceChangesForMe()];
 /** Premios que mi pareja canjeó y me toca cumplir. */
-export const vouchersToFulfill = () => state.vouchers.filter((v) => v.by !== state.auth?.uid && ['open', 'claimed'].includes(v.status));
+export const vouchersToFulfill = () => state.vouchers.filter((v) => v.by !== state.auth?.uid && ['open', 'claimed'].includes(v.status) && !isLater(v));
+/** “Lo haré más tarde”: premios que estimé cumplir en una fecha futura; hasta ese día no cuentan como pendientes. */
+export const isLater = (v) => v.status === 'open' && !!v.later?.date && v.later.date > L.ymd();
+export const vouchersLater = () => state.vouchers.filter((v) => v.by !== state.auth?.uid && isLater(v)).sort((a, b) => a.later.date.localeCompare(b.later.date));
+export const voucherLater = (id, date) => act('POST', `/vouchers/${id}/later`, { date });
 /** Premios que yo canjeé y mi pareja dice que ya cumplió: me toca confirmar si es verdad. */
 export const vouchersToConfirm = () => state.vouchers.filter((v) => v.by === state.auth?.uid && v.status === 'claimed');
 export const sendMessage = (text, kind = 'text', ref = null) => act('POST', '/messages', { text, kind, ref });
@@ -443,7 +447,7 @@ export async function redeem(proposal) {
 
 export const markSeen = () => { state.seenAt = Date.now(); commit(); };
 export const unread = () => state.messages.filter((m) => m.from !== state.auth?.uid && m.kind !== 'skip' && m.kind !== 'reaction' && m.ts > state.seenAt).length;
-export const pendingForMe = () => [...state.vouchers.filter((v) => (v.by !== state.auth?.uid && v.status === 'open') || (v.by === state.auth?.uid && v.status === 'claimed')), ...state.proposals.filter((p) => (p.status === 'pending' && p.lastBy !== state.auth?.uid) || (p.status === 'accepted' && p.change && p.change.by !== state.auth?.uid))];
+export const pendingForMe = () => [...state.vouchers.filter((v) => (v.by !== state.auth?.uid && v.status === 'open' && !isLater(v)) || (v.by === state.auth?.uid && v.status === 'claimed')), ...state.proposals.filter((p) => (p.status === 'pending' && p.lastBy !== state.auth?.uid) || (p.status === 'accepted' && p.change && p.change.by !== state.auth?.uid))];
 /** Premios aceptados cuyo precio mi pareja quiere cambiar (me toca decidir). */
 export const priceChangesForMe = () => state.proposals.filter((p) => p.status === 'accepted' && p.change && p.change.by !== state.auth?.uid);
 

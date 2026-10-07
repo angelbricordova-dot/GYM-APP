@@ -59,6 +59,26 @@ const priceAct = async (p, action, cost) => {
   toast({ change: 'Propuesta enviada: tu pareja decide', 'accept-change': `Listo: ahora cuesta ${r.data.proposal.cost} puntos`, 'decline-change': 'Se queda con el precio actual', 'cancel-change': 'Cambio cancelado' }[action], { icon: action === 'accept-change' ? '✅' : '💱' });
 };
 
+/** “Lo haré más tarde”: se estima el día (no la hora) en que se cumplirá y ese día se vuelve a recordar. */
+function LaterSheet({ v, onClose }) {
+  const today = L.ymd();
+  const [date, setDate] = useState(v.later?.date && v.later.date > today ? v.later.date : L.addDays(today, 1));
+  const [busy, setBusy] = useState(false);
+  const quick = [['Mañana', 1], ['En 3 días', 3], ['En una semana', 7], ['En 2 semanas', 14]];
+  const save = async () => {
+    setBusy(true);
+    const r = await S.voucherLater(v.id, date);
+    setBusy(false);
+    if (r.ok) { toast(`Te lo recordamos el ${fmtDay(date)}`, { icon: '📅' }); onClose(); } else toast(r.data.error, { icon: '⚠️' });
+  };
+  return html`<${Sheet} title="¿Para cuándo?" onClose=${onClose}>
+    <p class="muted">${v.emoji} <b>${v.name}</b>: elige más o menos qué día lo vas a cumplir. Ese día te lo recordamos.</p>
+    <div class="chips wrap">${quick.map(([label, n]) => html`<button type="button" class=${cx('chip pick', date === L.addDays(today, n) && 'on')} onClick=${() => setDate(L.addDays(today, n))}>${label}</button>`)}</div>
+    <${Field} label="O elige otra fecha"><input type="date" min=${L.addDays(today, 1)} value=${date} onInput=${(e) => e.target.value && setDate(e.target.value)} /><//>
+    <button class="btn primary block lg" disabled=${busy || date <= today} onClick=${save}>${busy ? 'Guardando…' : `Recordármelo el ${fmtDay(date)}`}</button>
+  <//>`;
+}
+
 /** Todo lo que está por cumplir, confirmar o decidir, aparte de los premios para canjear. */
 function Pending({ partner, onPrizes }) {
   const uid = S.state.auth.uid;
@@ -69,15 +89,23 @@ function Pending({ partner, onPrizes }) {
   const deny = (v) => { if (confirm(`Si de verdad NO lo hizo, ${partner?.name || 'tu pareja'} pierde ${L.LIE_PENALTY} puntos de amor por decir que sí. El premio sigue pendiente. ¿Confirmas?`)) act(v, 'deny', `Anotado: ${partner?.name || 'tu pareja'} pierde ${L.LIE_PENALTY} puntos y el premio sigue pendiente`); };
   const claim = (v) => { if (confirm(`¿De verdad ya cumpliste “${v.name}”? ${partner?.name || 'Tu pareja'} tendrá que confirmarlo.`)) act(v, 'claim', 'Listo: ahora ' + (partner?.name || 'tu pareja') + ' lo confirma'); };
   const changes = S.priceChangesForMe();
-  const empty = !toFulfill.length && !mineOpen.length && !changes.length;
+  const laterList = S.vouchersLater();
+  const [laterFor, setLaterFor] = useState(null); // premio al que le estimo una fecha
+  const empty = !toFulfill.length && !mineOpen.length && !changes.length && !laterList.length;
   return html`<div class="stack-lg">
     ${toFulfill.length > 0 && html`<section class="card rise attn"><h2>Premios pendientes por cumplir</h2>
       <p class="muted small">${partner?.name || 'Tu pareja'} los canjeó con sus puntos. Cuando los cumplas, toca “Lo hice”: ${partner?.name || 'tu pareja'} tiene que confirmar que sí fue verdad.</p>
       ${toFulfill.map((v) => html`<div class="fulfil"><div class="reward"><span class="emoji">${v.emoji}</span><div class="grow"><b>${v.name}</b><small class="muted">Canjeado por ${who(v.by, partner)} · ${fmtDay(L.ymd(new Date(v.ts)))}</small></div></div>
+        ${v.later?.date && v.status === 'open' && html`<p class="later-note">📅 Lo habías estimado para ${fmtDay(v.later.date)}</p>`}
         ${(v.lies || []).length > 0 && v.status === 'open' && html`<p class="lie-note">⚠️ Ya te marcaron ${(v.lies || []).length} ${(v.lies || []).length === 1 ? 'vez' : 'veces'} como que no lo hiciste (−${(v.lies || []).length * L.LIE_PENALTY} puntos). Cúmplelo de verdad antes de tocar “Lo hice”.</p>`}
         ${v.status === 'claimed'
           ? html`<div class="price-box pending"><span class="pb-ic">⏳</span><div class="grow"><b>Esperando confirmación</b><small>${partner?.name || 'Tu pareja'} tiene que confirmarlo</small></div></div>`
-          : html`<button class="btn primary block" onClick=${() => claim(v)}><${Icon} name="check" size=${18} sw=${2.6} /> Lo hice</button>`}
+          : html`<div class="idea-actions"><button class="btn primary" onClick=${() => claim(v)}><${Icon} name="check" size=${18} sw=${2.6} /> Lo hice</button><button class="btn ghost" onClick=${() => setLaterFor(v)}>Lo haré más tarde</button></div>`}
+      </div>`)}</section>`}
+    ${laterList.length > 0 && html`<section class="card rise"><h2>Para más tarde</h2>
+      <p class="muted small">Los dejaste para otra fecha. Ese día te lo recordamos.</p>
+      ${laterList.map((v) => html`<div class="fulfil"><div class="reward"><span class="emoji">${v.emoji}</span><div class="grow"><b>${v.name}</b><small class="muted">📅 Lo harás ${fmtDay(v.later.date)} · para ${partner?.name || 'tu pareja'}</small></div></div>
+        <div class="idea-actions"><button class="btn sm primary" onClick=${() => claim(v)}><${Icon} name="check" size=${16} sw=${2.6} /> Lo hice</button><button class="btn sm ghost" onClick=${() => setLaterFor(v)}>Cambiar fecha</button></div>
       </div>`)}</section>`}
     ${mineOpen.length > 0 && html`<section class="card rise"><h2>Mis premios canjeados</h2>${mineOpen.map((v) => html`<div class="fulfil"><div class="reward"><span class="emoji">${v.emoji}</span><div class="grow"><b>${v.name}</b><small class="muted">Canjeado ${fmtDay(L.ymd(new Date(v.ts)))}</small></div></div>
       ${v.status === 'claimed'
@@ -91,6 +119,7 @@ function Pending({ partner, onPrizes }) {
       <div class="idea-top"><span class="emoji">${p.emoji}</span><div class="grow"><b>${p.name}</b><small class="muted">${who(p.change.by, partner)} quiere cambiar el precio: <${Points} n=${p.cost} size=${13} /> → <${Points} n=${p.change.cost} size=${13} /></small></div></div>
       <div class="idea-actions"><button class="btn sm primary" onClick=${() => price(p, 'accept-change')}>Aceptar ${p.change.cost}</button><button class="btn sm ghost" onClick=${() => price(p, 'decline-change')}>Dejarlo en ${p.cost}</button></div>
     </div>`)}</section>`}
+    ${laterFor && html`<${LaterSheet} v=${laterFor} onClose=${() => setLaterFor(null)} />`}
     ${empty && html`<${Empty} icon="✅" title="Nada pendiente" text="Aquí se juntan los premios que hay que cumplir o confirmar, y los cambios de precio por decidir." action=${html`<button class="btn primary" onClick=${onPrizes}>Ver premios</button>`} />`}
   </div>`;
 }

@@ -92,7 +92,18 @@ test('propuestas: proponer, contraoferta y aceptar solo la otra persona', async 
   assert.equal((await act(B, 'claim')).status, 403);
   assert.equal((await act(A, 'confirm')).status, 403); // A no puede darse por cumplido solo
   assert.equal((await act(A, 'reject')).status, 403);
+  // “Lo haré más tarde”: solo quien lo cumple, con una fecha válida; no cambia el estado
+  const later = (who, date) => call('POST', `/vouchers/${v.id}/later`, { token: who.token, body: { date } });
+  assert.equal((await later(B, '2099-01-01')).status, 403);
+  assert.equal((await later(A, 'mañana')).status, 400);
+  assert.equal((await later(A, '2001-01-01')).status, 400);
+  assert.equal((await later(A, '2099-01-01')).status, 400); // demasiado lejos
+  const soon = new Date(Date.now() + 3 * 864e5).toISOString().slice(0, 10);
+  const snoozed = await later(A, soon);
+  assert.deepEqual([snoozed.data.voucher.status, snoozed.data.voucher.later.date], ['open', soon]);
   assert.equal((await act(A, 'claim')).data.voucher.status, 'claimed'); // “lo hice”
+  assert.equal((await call('GET', '/sync', { token: A.token })).data.vouchers.find((x) => x.id === v.id).later, undefined); // al cumplirlo se borra la fecha
+  assert.equal((await later(A, soon)).status, 409);
   assert.equal((await act(A, 'claim')).status, 409);
   assert.equal((await act(A, 'deny')).status, 403); // solo quien canjeó lo puede negar
   assert.equal((await act(B, 'reject')).data.voucher.status, 'open'); // “todavía no”

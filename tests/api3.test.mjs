@@ -164,6 +164,21 @@ test('recordatorio diario: a la hora local, una vez, solo si no entrenó', async
   assert.ok(d);
 });
 
+test('“lo haré más tarde”: el día estimado (a partir de las 9) se le recuerda una sola vez', async () => {
+  await call('POST', '/push/subscribe', { token: A.token, body: { subscription: sub('A9') } });
+  const p = (await call('POST', '/proposals', { token: A.token, body: { name: 'Masaje', emoji: '💆', cost: 10 } })).data.proposal;
+  await call('POST', `/proposals/${p.id}`, { token: B.token, body: { action: 'accept' } });
+  const v = (await call('POST', '/vouchers', { token: B.token, body: { proposalId: p.id } })).data.voucher; // B canjea: lo cumple A
+  const day = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+  assert.equal((await call('POST', `/vouchers/${v.id}/later`, { token: A.token, body: { date: day } })).status, 200);
+  sent.length = 0;
+  assert.equal((await runReminders(new Date(`${day}T08:00:00Z`))).sent, 0); // 8:00: aún no
+  assert.equal((await runReminders(new Date(`${day}T09:00:00Z`))).sent, 1);
+  assert.equal(last().endpoint, 'https://push.example/A9');
+  assert.match(last().title, /Masaje/);
+  assert.equal((await runReminders(new Date(`${day}T15:00:00Z`))).sent, 0); // solo una vez
+});
+
 test('rutinas compartidas: enviar, ver, guardar y quitar', async () => {
   const body = { name: 'Empuje', note: 'Pruébala', exercises: [{ name: 'Press banca', sets: 4, reps: 8 }, 'Fondos', { name: '' }] };
   assert.equal((await call('POST', '/routines', { token: A.token, body: { name: '', exercises: [] } })).status, 400);
