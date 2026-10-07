@@ -82,6 +82,8 @@ No necesitas configurar nada: las llaves (VAPID) se generan solas la primera vez
 - **iPhone**: solo funcionan con la app **instalada en la pantalla de inicio** (Safari → Compartir → Agregar a pantalla de inicio), abierta desde su icono, con **iOS 16.4 o más reciente**. Después activa el interruptor en *Perfil → Notificaciones*. Hay un botón para mandarte una notificación de prueba.
 - El **recordatorio diario** lo manda una función programada de Netlify (`netlify/functions/reminders.mjs`, cada hora). Corre solo en el sitio publicado, no en `npm run dev`.
 - Si cambias el dominio del sitio, desactiva y vuelve a activar las notificaciones en cada teléfono.
+- **Con la app abierta** no hace falta push: se revisa cada 15 s y aparece un aviso arriba (toca para ir a la pantalla; se quita deslizándolo hacia arriba) con un sonidito suave.
+- **Si no llegan**: en *Perfil → Notificaciones* ves cuántos teléfonos tienes registrados y el último error del servicio de avisos (con su código). *Reparar notificaciones* crea el registro de nuevo (arregla llaves viejas). Quien envía ve “aún no tiene las notificaciones activadas” si su pareja no tiene ningún teléfono registrado. En el panel de Netlify, *Logs → Functions → api* muestra `push falló:` con el motivo.
 
 ## Desvincularse y cambiar de pareja
 

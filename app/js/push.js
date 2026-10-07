@@ -21,6 +21,23 @@ export async function currentSubscription() {
   return reg.pushManager.getSubscription();
 }
 
+const sameKey = (sub, bytes) => {
+  const k = sub.options?.applicationServerKey;
+  if (!k) return true;
+  const a = new Uint8Array(k);
+  return a.length === bytes.length && a.every((v, i) => v === bytes[i]);
+};
+
+/** La suscripción de este teléfono con la llave actual del servidor. Una suscripción vieja con otra llave se descarta (los avisos le fallarían en silencio). */
+async function ensureSubscription(keyB64) {
+  const reg = await navigator.serviceWorker.ready;
+  const bytes = b64ToBytes(keyB64);
+  let sub = await reg.pushManager.getSubscription();
+  if (sub && !sameKey(sub, bytes)) { await sub.unsubscribe().catch(() => {}); sub = null; }
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes }).catch(() => null);
+  return sub;
+}
+
 /** Pide permiso (debe llamarse desde un toque), suscribe este dispositivo y lo registra en el servidor. */
 export async function enablePush() {
   if (!pushSupport().supported) return { ok: false, error: 'Este navegador no admite notificaciones.' };
@@ -28,15 +45,33 @@ export async function enablePush() {
   if (perm !== 'granted') return { ok: false, error: 'Permiso denegado. Actívalo en los ajustes del teléfono para Lindwyrm.' };
   const keyRes = await S.request('GET', '/push/key');
   if (!keyRes.ok) return { ok: false, error: keyRes.data.error || 'No pude conectar con el servidor.' };
-  const reg = await navigator.serviceWorker.ready;
-  const options = { userVisibleOnly: true, applicationServerKey: b64ToBytes(keyRes.data.key) };
-  let sub = await reg.pushManager.getSubscription();
-  if (!sub) sub = await reg.pushManager.subscribe(options).catch(() => null);
+  const sub = await ensureSubscription(keyRes.data.key);
   if (!sub) return { ok: false, error: 'El teléfono no pudo crear la suscripción. Inténtalo de nuevo.' };
   const res = await S.request('POST', '/push/subscribe', { subscription: sub.toJSON() });
   if (!res.ok) return { ok: false, error: res.data.error || 'No se pudo guardar la suscripción.' };
   await S.syncNow();
   return { ok: true };
+}
+
+/** Borra la suscripción de este teléfono y crea una nueva (arregla llaves viejas, suscripciones caducadas o registros perdidos). */
+export async function repairPush() {
+  const sub = await currentSubscription();
+  if (sub) {
+    await S.request('POST', '/push/unsubscribe', { endpoint: sub.endpoint });
+    await sub.unsubscribe().catch(() => {});
+  }
+  return enablePush();
+}
+
+/** Al abrir la app, si ya hay permiso: vuelve a registrar este teléfono (no cambia nada si ya estaba) y corrige una llave vieja. */
+export async function refreshPush() {
+  try {
+    if (!pushSupport().supported || Notification.permission !== 'granted') return;
+    const keyRes = await S.request('GET', '/push/key');
+    if (!keyRes.ok) return;
+    const sub = await ensureSubscription(keyRes.data.key);
+    if (sub) await S.request('POST', '/push/subscribe', { subscription: sub.toJSON() });
+  } catch { /* se intentará en la próxima apertura */ }
 }
 
 export async function disablePush() {

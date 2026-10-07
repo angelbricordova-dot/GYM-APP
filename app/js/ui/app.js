@@ -1,7 +1,8 @@
 import { html, useEffect, useState } from '../../vendor/preact-htm.js';
 import * as S from '../store.js';
-import { applyAccent, applyTheme } from '../theme.js';
-import { Icon, ToastHost, cx, fmtDur } from './kit.js';
+import { applyAccent, applyTheme, playPing } from '../theme.js';
+import { refreshPush } from '../push.js';
+import { Icon, ToastHost, toast, cx, fmtDur } from './kit.js';
 import { nav, goTab, openScreen, useApp } from './nav.js';
 import { Auth } from './auth.js';
 import { Today } from './today.js';
@@ -24,6 +25,17 @@ export function App() {
   useEffect(() => { applyTheme(); }, []);
   useEffect(() => { if (!st.draft) return; const id = setInterval(() => tick((v) => v + 1), 1000); return () => clearInterval(id); }, [!!st.draft]);
   useEffect(() => { if (st.me) applyAccent(st.me.color); }, [st.me?.color]);
+  useEffect(() => { if (st.me) { const id = setTimeout(refreshPush, 3000); return () => clearTimeout(id); } }, [!!st.me]); // re-registra este teléfono para los avisos
+  // Novedades de mi pareja con la app abierta: toast que lleva a la pantalla correspondiente.
+  useEffect(() => {
+    S.onIncoming((events, first) => {
+      const shown = first && events.length > 2 ? [{ icon: '🔔', title: `Tienes ${events.length} novedades`, body: events.map((e) => e.title).slice(0, 2).join(' · '), tab: events[0].tab }] : events.slice(0, 3);
+      shown.forEach((e) => toast(e.title, { icon: e.icon, body: e.body, kind: 'push', onClick: () => goTab(e.tab) }));
+      if (!first && events.length > 3) toast(`+${events.length - 3} novedades más`, { icon: '🔔', kind: 'push' });
+      playPing();
+    });
+    return () => S.onIncoming(null);
+  }, []);
 
   if (!st.auth) return html`<${Auth} /><${ToastHost} />`;
   if (!st.me) return html`<div class="boot"><div class="spinner"></div><p class="muted">Cargando tu espacio…</p>${S.net.online === false && html`<p class="notice">Sin conexión. Reintentaremos al volver la señal.</p>`}</div>`;

@@ -221,14 +221,62 @@ export function Sheet({ onClose, title, children, full, right }) {
   </div>`;
 }
 
-// ---------- toasts ----------
+// ---------- avisos (toasts) ----------
+// Tarjetas que bajan desde arriba (hasta 3 a la vez), con ícono, título y detalle opcional, barra de tiempo,
+// se cierran con un toque o deslizando hacia arriba, y pueden llevar a una pantalla (onClick).
+let toasts = [];
 let toastSet = null;
-export function toast(msg, opts = {}) { toastSet?.({ msg, icon: opts.icon, id: Date.now(), kind: opts.kind }); }
+let toastId = 0;
+const pushToasts = () => toastSet?.([...toasts]);
+export function dismissToast(id) {
+  const t = toasts.find((x) => x.id === id);
+  if (!t || t.out) return;
+  t.out = true; pushToasts();
+  setTimeout(() => { toasts = toasts.filter((x) => x.id !== id); pushToasts(); }, 280);
+}
+/** toast('Texto', { icon, body, kind: 'ok' | 'warn' | 'push', onClick, ms }) */
+export function toast(msg, opts = {}) {
+  if (toasts.some((x) => !x.out && x.title === msg && x.body === opts.body)) return; // sin repetidos seguidos
+  const t = { id: ++toastId, title: msg, body: opts.body, icon: opts.icon, kind: opts.kind || (opts.icon === '⚠️' ? 'warn' : undefined), onClick: opts.onClick, out: false,
+    ms: opts.ms || Math.min(7000, 2800 + (String(msg).length + String(opts.body || '').length) * 40) };
+  toasts = [...toasts.filter((x) => !x.out), t].slice(-3);
+  pushToasts();
+  setTimeout(() => dismissToast(t.id), t.ms);
+}
+
+function ToastCard({ t }) {
+  const el = useRef();
+  const drag = useRef(null);
+  const down = (e) => { drag.current = { y0: e.clientY, dy: 0, moved: false }; el.current.setPointerCapture?.(e.pointerId); el.current.style.transition = 'none'; };
+  const move = (e) => {
+    const d = drag.current;
+    if (!d) return;
+    d.dy = Math.min(8, e.clientY - d.y0);
+    if (Math.abs(d.dy) > 4) d.moved = true;
+    el.current.style.transform = `translateY(${d.dy}px)`;
+  };
+  const up = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d) return;
+    el.current.style.transition = '';
+    el.current.style.transform = '';
+    if (d.dy < -24) return dismissToast(t.id); // deslizar hacia arriba lo quita
+    if (!d.moved) { dismissToast(t.id); t.onClick?.(); } // tocar: abre lo que anuncia (si lo hay) y se cierra
+  };
+  return html`<div ref=${el} class=${cx('toast', t.kind, t.out && 'out', t.onClick && 'tappable')} role="status" style=${`--ms:${t.ms}ms`}
+    onPointerDown=${down} onPointerMove=${move} onPointerUp=${up} onPointerCancel=${up}>
+    ${t.icon && html`<span class="toast-ic">${t.icon}</span>`}
+    <div class="toast-tx"><b>${t.title}</b>${t.body && html`<small>${t.body}</small>`}</div>
+    ${t.onClick && html`<${Icon} name="right" size=${16} class="toast-go" />`}
+    <i class="toast-bar"></i>
+  </div>`;
+}
+
 export function ToastHost() {
-  const [t, setT] = useState(null);
-  useEffect(() => { toastSet = setT; return () => { toastSet = null; }; }, []);
-  useEffect(() => { if (!t) return; const id = setTimeout(() => setT(null), 2600); return () => clearTimeout(id); }, [t]);
-  return html`<div class="toast-host" aria-live="polite">${t && html`<div class=${cx('toast', t.kind)} key=${t.id}>${t.icon && html`<span>${t.icon}</span>`}${t.msg}</div>`}</div>`;
+  const [list, setList] = useState([]);
+  useEffect(() => { toastSet = setList; return () => { toastSet = null; }; }, []);
+  return html`<div class="toast-host" aria-live="polite">${list.map((t) => html`<${ToastCard} key=${t.id} t=${t} />`)}</div>`;
 }
 
 // ---------- controles ----------

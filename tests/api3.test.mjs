@@ -96,6 +96,26 @@ test('push: preferencias por tipo y limpieza de dispositivos caducados', async (
   assert.equal((await call('GET', '/sync', { token: B.token })).data.account.push.devices, 0);
 });
 
+test('push: los fallos ya no son invisibles (error en Perfil, aviso en la prueba y si la pareja no tiene avisos)', async () => {
+  await call('POST', '/push/subscribe', { token: A.token, body: { subscription: sub('A9') } });
+  failWith = 403;
+  const t = await call('POST', '/push/test', { token: A.token });
+  assert.equal(t.status, 409);
+  assert.match(t.data.error, /403/);
+  assert.match(t.data.error, /Reparar/);
+  const acc = (await call('GET', '/sync', { token: A.token })).data.account;
+  assert.equal(acc.push.error.status, 403); // se conserva para mostrarlo
+  failWith = null;
+  assert.equal((await call('POST', '/push/test', { token: A.token })).status, 200);
+  assert.equal((await call('GET', '/sync', { token: A.token })).data.account.push.error, null); // un envío bueno lo limpia
+  // ¿mi pareja puede recibir mis avisos?
+  const hasB = (await call('GET', '/sync', { token: A.token })).data.partnerPush;
+  assert.equal(typeof hasB, 'boolean');
+  await call('POST', '/push/unsubscribe', { token: A.token, body: { endpoint: sub('A9').endpoint } });
+  const swapped = (await call('GET', '/sync', { token: B.token })).data.partnerPush; // A ya sin dispositivos suscritos
+  assert.equal(typeof swapped, 'boolean');
+});
+
 test('recordatorio diario: a la hora local, una vez, solo si no entrenó', async () => {
   await call('POST', '/push/subscribe', { token: B.token, body: { subscription: sub('B3') } });
   await call('POST', '/push/prefs', { token: B.token, body: { reminder: true, reminderHour: 18 } });

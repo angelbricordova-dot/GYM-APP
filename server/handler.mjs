@@ -349,7 +349,8 @@ async function sync(user, url) {
       : null,
     inviteCode: sp && !partnerRec ? sp.inviteCode : null,
     proposals, vouchers, messages, challenges, routines,
-    account: { google: !!user.googleSub, email: user.email || '', hasPin: !!user.hash, push: { devices: (user.push || []).length, prefs: { ...DEFAULT_PREFS, ...user.pushPrefs } } },
+    partnerPush: partnerRec ? (partnerRec.push || []).length > 0 : false, // ¿mi pareja puede recibir avisos? (para avisarme si no)
+    account: { google: !!user.googleSub, email: user.email || '', hasPin: !!user.hash, push: { devices: (user.push || []).length, prefs: { ...DEFAULT_PREFS, ...user.pushPrefs }, error: user.pushError || null } },
     serverTime: Date.now(),
   });
 }
@@ -739,8 +740,12 @@ async function pushRoutes(user, path, body, method) {
   if (path === '/push/unsubscribe') { await push.unsubscribe(user, String(body.endpoint || '')); return json(200, { ok: true }); }
   if (path === '/push/prefs') return json(200, { prefs: await push.setPrefs(user, body) });
   if (path === '/push/test') {
+    const fresh = await db.get(`user/${user.id}`);
+    if (!(fresh.push || []).length) return fail(409, 'No hay ningún dispositivo suscrito. Activa las notificaciones primero.');
     const r = await push.notify(user.id, { title: 'Lindwyrm', body: '¡Las notificaciones funcionan! 💗', url: '/', tag: 'test' });
-    return r.sent ? json(200, { ok: true, sent: r.sent }) : fail(409, 'No hay ningún dispositivo suscrito. Activa las notificaciones primero.');
+    if (r.sent) return json(200, { ok: true, sent: r.sent });
+    const why = r.error ? ` El servicio de avisos respondió ${r.error.status || 'sin respuesta'}${r.error.msg ? ` (${r.error.msg})` : ''}.` : '';
+    return fail(409, `No se pudo enviar.${why} Toca “Reparar notificaciones” y vuelve a probar.`);
   }
   return fail(404, 'Ruta no encontrada.');
 }

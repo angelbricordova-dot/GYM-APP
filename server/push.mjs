@@ -7,7 +7,13 @@ import * as L from '../app/js/logic.js';
 export const _push = { send: (sub, payload, opts) => webpush.sendNotification(sub, payload, opts) };
 
 export const DEFAULT_PREFS = { challenges: true, notes: true, workouts: true, routines: true, prizes: true, reminder: false, reminderHour: 18 };
-const TIMEOUT_MS = 2500;
+const TIMEOUT_MS = 7000;
+
+/** Promesa con tope de tiempo (y sin dejar el temporizador colgado). */
+const withTimeout = (p, ms) => new Promise((res, rej) => {
+  const t = setTimeout(() => rej(new Error('timeout')), ms);
+  Promise.resolve(p).then((v) => { clearTimeout(t); res(v); }, (e) => { clearTimeout(t); rej(e); });
+});
 
 export function createPush(db) {
   async function keys() {
@@ -43,7 +49,10 @@ export function createPush(db) {
     return next;
   }
 
-  /** Envía una notificación a todos los dispositivos de una persona. Nunca lanza: una falla de push no debe romper la acción. */
+  /**
+   * Envía una notificación a todos los dispositivos de una persona (en paralelo). Nunca lanza: una falla de push no debe romper la acción.
+   * Si algo falla guarda el último error en el usuario para mostrarlo en Perfil (antes los fallos eran invisibles).
+   */
   async function notify(uid, msg) {
     try {
       const user = uid && (await db.get(`user/${uid}`));
@@ -51,23 +60,29 @@ export function createPush(db) {
       const prefs = { ...DEFAULT_PREFS, ...user.pushPrefs };
       if (msg.type && prefs[msg.type] === false) return { sent: 0, skipped: true };
       const k = await keys();
-      const payload = JSON.stringify({ title: msg.title, body: msg.body || '', url: msg.url || '/', tag: msg.tag || msg.type || 'lindwyrm', icon: '/icons/icon-192.png', badge: '/icons/icon-192.png' });
-      const opts = { vapidDetails: { subject: subject(), publicKey: k.publicKey, privateKey: k.privateKey }, TTL: 86_400, urgency: 'normal' };
-      const alive = [];
-      let sent = 0;
-      for (const sub of user.push) {
+      // el tag es único por aviso: dos notas seguidas se ven las dos
+      const payload = JSON.stringify({ title: msg.title, body: msg.body || '', url: msg.url || '/', tag: msg.tag || `${msg.type || 'lindwyrm'}-${Date.now().toString(36)}`, icon: '/icons/icon-192.png', badge: '/icons/icon-192.png' });
+      const opts = { vapidDetails: { subject: subject(), publicKey: k.publicKey, privateKey: k.privateKey }, TTL: 86_400, urgency: 'high', timeout: TIMEOUT_MS };
+      const results = await Promise.all(user.push.map(async (sub) => {
         try {
-          await Promise.race([_push.send(sub, payload, opts), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), TIMEOUT_MS))]);
-          alive.push(sub); sent++;
+          await withTimeout(_push.send(sub, payload, opts), TIMEOUT_MS + 500);
+          return { sub, ok: true };
         } catch (e) {
-          if (![404, 410].includes(e.statusCode)) alive.push(sub); // 404/410: el dispositivo ya no existe, se elimina
+          return { sub, ok: false, status: e.statusCode || 0, msg: String(e.body || e.message || e).slice(0, 160) };
         }
-      }
-      if (alive.length !== user.push.length) { user.push = alive; await db.set(`user/${user.id}`, user); }
-      return { sent };
+      }));
+      const sent = results.filter((r) => r.ok).length;
+      const bad = results.find((r) => !r.ok);
+      const alive = results.filter((r) => r.ok || ![404, 410].includes(r.status)).map((r) => r.sub); // 404/410: el dispositivo ya no existe, se elimina
+      let dirty = alive.length !== user.push.length;
+      if (dirty) user.push = alive;
+      if (bad) { console.error('push falló:', new URL(bad.sub.endpoint).host, bad.status, bad.msg); user.pushError = { ts: Date.now(), status: bad.status, msg: bad.msg }; dirty = true; }
+      else if (user.pushError) { delete user.pushError; dirty = true; }
+      if (dirty) await db.set(`user/${user.id}`, user);
+      return { sent, failed: results.length - sent, error: bad ? { status: bad.status, msg: bad.msg } : null };
     } catch (e) {
       console.error('push:', e.message);
-      return { sent: 0, error: true };
+      return { sent: 0, error: { status: 0, msg: e.message } };
     }
   }
 

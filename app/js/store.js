@@ -37,6 +37,52 @@ function save() {
 }
 
 export const subscribe = (fn) => { subs.add(fn); return () => subs.delete(fn); };
+
+// ---------- novedades con la app abierta ----------
+// Cuando llega algo de mi pareja mientras tengo la app abierta (nota, reto, evidencia, corazón…) se avisa al instante con un toast.
+let notifier = null;
+let firstSync = true;
+export const onIncoming = (fn) => { notifier = fn; };
+
+/** Compara lo que había con lo que llegó y devuelve los avisos nuevos para mí. */
+function incoming(prev, cur, name, first) {
+  const me = cur.auth?.uid;
+  const out = [];
+  const fresh = (ts) => !first || Date.now() - (ts || 0) < 12 * 3600e3; // al abrir la app solo lo reciente
+  const byId = (a) => new Map((a || []).map((x) => [x.id, x]));
+  const pm = byId(prev.messages), pc = byId(prev.challenges), pp = byId(prev.proposals), pr = byId(prev.routines), pv = byId(prev.vouchers);
+  for (const m of cur.messages) {
+    const old = pm.get(m.id);
+    if (!old && m.from !== me && fresh(m.ts)) {
+      if (m.kind === 'reaction') out.push({ icon: '👏', title: `${name} reaccionó ${m.text} a tu entreno`, tab: 'together' });
+      else if (m.kind === 'skip') out.push({ icon: '😔', title: `${name} hoy no fue al gym`, body: `${m.text} · decide cuántos puntos quitarle`, tab: 'today' });
+      else out.push({ icon: '💌', title: `Nota de ${name}`, body: m.text, tab: 'together' });
+    } else if (old && m.from === me) {
+      if ((m.likes || []).length > (old.likes || []).length && (m.likes || []).some((x) => x !== me)) out.push({ icon: '❤️', title: `${name} le dio corazón a tu nota`, body: m.text, tab: 'together' });
+      if (m.kind === 'skip' && m.penalty && !old.penalty) out.push({ icon: '⚖️', title: m.penalty.points ? `${name} te quitó ${m.penalty.points} puntos de amor` : `${name} no te quitó ningún punto 💗`, body: m.text, tab: 'today' });
+    }
+  }
+  for (const c of cur.challenges) {
+    const old = pc.get(c.id);
+    if (!old && c.to === me && c.status === 'open' && fresh(c.ts)) out.push({ icon: '🎯', title: `${name} te retó`, body: `${c.title} · ${c.points} puntos de amor`, tab: 'today' });
+    else if (old && old.status !== c.status) {
+      if (c.from === me && c.status === 'submitted') out.push({ icon: '📹', title: `${name} envió su evidencia`, body: `${c.title}: revísala`, tab: 'today' });
+      if (c.to === me && c.status === 'approved') out.push({ icon: '💗', title: `¡Reto aprobado! +${c.points} puntos de amor`, body: c.title, tab: 'today' });
+      if (c.to === me && c.status === 'rejected') out.push({ icon: '↩️', title: 'Te pidieron repetir el reto', body: c.note || c.title, tab: 'today' });
+    }
+  }
+  for (const p of cur.proposals) {
+    const old = pp.get(p.id);
+    if (!old && p.by !== me && fresh(p.createdAt)) out.push({ icon: '🎁', title: `${name} propuso un premio`, body: `${p.emoji} ${p.name} · ${p.cost} puntos de amor`, tab: 'rewards' });
+    else if (old && p.by === me && old.status === 'pending' && p.status !== 'pending') out.push({ icon: p.status === 'accepted' ? '✅' : '🙅', title: `${name} ${p.status === 'accepted' ? 'aceptó' : 'rechazó'} tu idea`, body: `${p.emoji} ${p.name}`, tab: 'rewards' });
+    else if (old && p.status === 'pending' && p.lastBy !== me && old.lastBy === me) out.push({ icon: '💱', title: `${name} contraofertó ${p.cost} puntos`, body: `${p.emoji} ${p.name}`, tab: 'rewards' });
+  }
+  for (const v of cur.vouchers) if (!pv.has(v.id) && v.by !== me && fresh(v.ts)) out.push({ icon: v.emoji || '🎁', title: `${name} canjeó un premio`, body: v.name, tab: 'rewards' });
+  for (const r of cur.routines) if (!pr.has(r.id) && r.to === me && fresh(r.ts)) out.push({ icon: '🏋️', title: `${name} te recomendó una rutina`, body: r.name, tab: 'together' });
+  const today = L.ymd();
+  if (!first && !prev.partnerDoc?.checkins?.[today] && cur.partner?.doc?.checkins?.[today]) out.push({ icon: '🔥', title: `${name} ya entrenó`, body: 'Mándale ánimo', tab: 'together' });
+  return out;
+}
 let version = 0;
 export const getVersion = () => version;
 const emit = () => { version++; subs.forEach((fn) => fn()); };
@@ -139,13 +185,19 @@ export async function syncNow() {
     const res = await call('GET', q);
     if (res.ok) {
       const d = res.data;
+      const prev = { messages: state.messages, challenges: state.challenges, proposals: state.proposals, routines: state.routines, vouchers: state.vouchers, partnerDoc: state.partner?.doc };
       if (d.me && !state.dirty) { state.me = d.me; state.meSyncedAt = d.me.updatedAt; }
-      state.partner = d.partner ? { id: d.partner.id, name: d.partner.name, updatedAt: d.partner.updatedAt, doc: d.partner.doc || state.partner?.doc || null } : null;
+      state.partner = d.partner ? { id: d.partner.id, name: d.partner.name, updatedAt: d.partner.updatedAt, doc: d.partner.doc || state.partner?.doc || null, push: !!d.partnerPush } : null;
       state.invite = d.inviteCode;
       if (d.partner && state.pendingInvite) state.pendingInvite = null; // un enlace de invitación ya no aplica si tengo pareja
       state.proposals = d.proposals; state.vouchers = d.vouchers; state.messages = d.messages; state.challenges = d.challenges || []; state.routines = d.routines || [];
       state.account = d.account || null;
       reconcilePoints();
+      if (notifier && state.partner) {
+        const ev = incoming(prev, state, state.partner.name, firstSync);
+        if (ev.length) notifier(ev, firstSync);
+      }
+      firstSync = false;
       net.error = null;
       net.lastSync = Date.now();
     } else if (res.status) net.error = res.data.error;
@@ -161,7 +213,7 @@ export function startSyncLoop() {
   document.addEventListener('visibilitychange', kick);
   addEventListener('online', kick);
   addEventListener('focus', kick);
-  setInterval(kick, 45_000);
+  setInterval(kick, 15_000); // con la app abierta se revisa cada 15 s (las notificaciones push cubren cuando está cerrada)
   kick();
 }
 

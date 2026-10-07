@@ -58,6 +58,21 @@ export const haptic = (ms = 10) => { try { navigator.vibrate?.(ms); } catch { /*
 export const soundOn = () => { try { return localStorage.getItem('lindwyrm.sound') !== '0'; } catch { return true; } };
 export const setSoundOn = (on) => { try { localStorage.setItem('lindwyrm.sound', on ? '1' : '0'); } catch { /* sin storage */ } };
 let audio = null;
+/** Avisito corto cuando llega algo de tu pareja con la app abierta. */
+export function playPing() {
+  if (!soundOn()) return;
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === 'suspended') audio.resume();
+    const t0 = audio.currentTime + 0.01;
+    for (const [f, at] of [[988, 0], [1318, 0.12]]) {
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.type = 'sine'; o.frequency.setValueAtTime(f, t0 + at);
+      g.gain.setValueAtTime(0.0001, t0 + at); g.gain.exponentialRampToValueAtTime(0.12, t0 + at + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.28);
+      o.connect(g).connect(audio.destination); o.start(t0 + at); o.stop(t0 + at + 0.32);
+    }
+  } catch { /* sin audio */ }
+}
 /** Sonidito de “me gusta”: dos notas suaves que suben, con un brillo al final. Se llama desde un toque (iOS lo exige). */
 export function playLike() {
   if (!soundOn()) return;

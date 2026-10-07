@@ -8,6 +8,7 @@ import { ChallengeCard, NewChallengeSheet } from './challenges.js';
 import { shareInvite, copyInvite } from '../invite.js';
 import { SkipSheet, SkipDecision } from './skip.js';
 import { JoinOtherSheet } from './link.js';
+import { pushSupport, enablePush } from '../push.js';
 
 export function Today() {
   const [skip, setSkip] = useState(false);
@@ -133,12 +134,23 @@ function Banners() {
   const newRoutines = S.routinesNew();
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) && !navigator.standalone && !matchMedia('(display-mode: standalone)').matches;
   const [hideIos, setHideIos] = useState(() => { try { return !!localStorage.getItem('lindwyrm.iosTip'); } catch { return false; } });
-  if (!notes.length && !pending && !newRoutines.length && (!ios || hideIos)) return null;
+  const sup = pushSupport();
+  const devices = S.state.account?.push?.devices;
+  const askPush = sup.supported && !sup.needsInstall && sup.permission === 'default' && devices === 0 && !S.isDismissed('push-ask');
+  const [pushBusy, setPushBusy] = useState(false);
+  const turnOn = async () => {
+    setPushBusy(true);
+    const r = await enablePush();
+    setPushBusy(false);
+    toast(r.ok ? 'Notificaciones activadas' : r.error, { icon: r.ok ? '🔔' : '⚠️' });
+  };
+  if (!notes.length && !pending && !newRoutines.length && (!ios || hideIos) && !askPush) return null;
   return html`<div class="group banners rise">
+    ${askPush && html`<div class="row" role="button" onClick=${turnOn}><span class="lead tint-rose">🔔</span><div class="grow"><b>${pushBusy ? 'Activando…' : 'Activa las notificaciones'}</b><small class="muted">Para enterarte al instante de las notas, retos y premios de tu pareja</small></div><button class="icon-btn flat" onClick=${(e) => { e.stopPropagation(); S.dismiss('push-ask'); }} aria-label="Ahora no"><${Icon} name="x" size=${16} /></button></div>`}
     ${notes.length > 0 && html`<div class="row" role="button" onClick=${() => goTab('together')}><span class="lead tint-rose">💌</span><div class="grow"><b>Nota de ${S.state.partner?.name}</b><small class="muted">${notes.at(-1).text}</small></div><${Icon} name="right" size=${16} class="chev" /></div>`}
     ${newRoutines.length > 0 && html`<div class="row" role="button" onClick=${() => goTab('together')}><span class="lead tint-rose">🏋️</span><div class="grow"><b>${S.state.partner?.name} te recomendó una rutina</b><small class="muted">${newRoutines[0].name}</small></div><${Icon} name="right" size=${16} class="chev" /></div>`}
     ${pending > 0 && html`<div class="row" role="button" onClick=${() => goTab('rewards')}><span class="lead tint-rose">🎁</span><div class="grow"><b>${pending} idea${pending > 1 ? 's' : ''} por decidir</b><small class="muted">Tu pareja propuso un premio</small></div><${Icon} name="right" size=${16} class="chev" /></div>`}
-    ${ios && !hideIos && html`<div class="row static"><span class="lead">📲</span><div class="grow"><b>Instálala como app</b><small class="muted">Safari → Compartir → Agregar a pantalla de inicio</small></div><button class="icon-btn flat" onClick=${() => { try { localStorage.setItem('lindwyrm.iosTip', '1'); } catch {} setHideIos(true); }} aria-label="Cerrar"><${Icon} name="x" size=${16} /></button></div>`}
+    ${ios && !hideIos && html`<div class="row static"><span class="lead">📲</span><div class="grow"><b>Instálala como app</b><small class="muted">Safari → Compartir → Agregar a pantalla de inicio. Así te llegan las notificaciones</small></div><button class="icon-btn flat" onClick=${() => { try { localStorage.setItem('lindwyrm.iosTip', '1'); } catch {} setHideIos(true); }} aria-label="Cerrar"><${Icon} name="x" size=${16} /></button></div>`}
   </div>`;
 }
 
@@ -173,6 +185,7 @@ function PartnerCard({ partner }) {
       </div>
       ${info && html`<div class="pc-streak"><${Flame} size=${22} lit=${info.alive} /><b>${info.current}</b></div>`}
     </button>
+    ${partner.push === false && html`<p class="nopush muted small">🔕 ${partner.name} aún no tiene las notificaciones activadas: no se entera de tus avisos hasta que abra la app.</p>`}
     ${sk && !ck && !S.isDismissed(skKey) && html`<div class="skip-note"><span>“${sk.reason}”</span><button class="icon-btn flat" onClick=${() => S.dismiss(skKey)} aria-label="Cerrar este aviso"><${Icon} name="x" size=${16} /></button></div>`}
     <div class="pc-actions">
       <button class="btn tinted sm" onClick=${cheer}><${Icon} name="heart" size=${15} /> Mandar ánimo</button>

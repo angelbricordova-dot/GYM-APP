@@ -106,7 +106,6 @@ input, textarea, select { font-size: 17px; }
 @keyframes halo { 0%, 100% { transform: scale(1); opacity: .5; } 50% { transform: scale(1.18); opacity: .9; } }
 @keyframes slideL { from { opacity: 0; transform: translateX(-14px); } }
 @keyframes slideR { from { opacity: 0; transform: translateX(14px); } }
-@keyframes toastIn { from { opacity: 0; transform: translate(-50%, -14px) scale(.96); } }
 @keyframes shimmer { to { background-position: -200% 0; } }
 @keyframes blink { 50% { opacity: .25; } }
 @keyframes beat { 0%, 100% { transform: scale(1); } 40% { transform: scale(1.35); } }
@@ -519,8 +518,24 @@ details.card[open] summary { margin-bottom: 8px; }
 .sticky-done { position: sticky; bottom: 0; }
 
 /* ---------- avisos ---------- */
-.toast-host { position: fixed; left: 0; right: 0; top: calc(env(safe-area-inset-top) + 10px); z-index: 90; pointer-events: none; }
-.toast { position: absolute; left: 50%; top: 0; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; background: var(--text); color: var(--bg); padding: 12px 18px; border-radius: 99px; font-weight: 620; font-size: 15px; box-shadow: 0 12px 30px rgba(0, 0, 0, .35); max-width: 90vw; text-align: center; animation: toastIn 320ms var(--ease-out); }
+.toast-host { position: fixed; left: 0; right: 0; top: calc(env(safe-area-inset-top) + 10px); z-index: 90; pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0 12px; }
+.toast { position: relative; overflow: hidden; pointer-events: auto; touch-action: none; display: flex; align-items: center; gap: 12px; width: min(100%, 440px); padding: 12px 14px; border-radius: 22px; color: var(--text); background: color-mix(in srgb, var(--s1) 95%, transparent); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); box-shadow: 0 0 0 1px var(--line), 0 18px 40px -12px rgba(0, 0, 0, .45); animation: toastIn 520ms cubic-bezier(.2, 1.1, .3, 1) backwards; transition: transform 200ms var(--ease-out); }
+.toast.tappable { cursor: pointer; }
+.toast.out { animation: toastOut 280ms var(--ease-out) forwards; }
+.toast-ic { flex: none; width: 40px; height: 40px; border-radius: 13px; display: grid; place-items: center; font-size: 22px; background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.toast.warn .toast-ic { background: color-mix(in srgb, var(--warn) 25%, transparent); }
+.toast.push .toast-ic { background: color-mix(in srgb, var(--love) 20%, transparent); }
+.toast-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; text-align: left; }
+.toast-tx b { font-size: 15px; font-weight: 700; line-height: 1.25; }
+.toast-tx small { font-size: 14px; color: var(--text2); line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.toast-go { flex: none; color: var(--text3); }
+.toast-bar { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: var(--accent); opacity: .7; transform-origin: left; animation: toastBar var(--ms, 3s) linear forwards; }
+.toast.push .toast-bar { background: var(--love); }
+.toast.warn .toast-bar { background: var(--warn); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(-140%) scale(.94); } }
+@keyframes toastOut { to { opacity: 0; transform: translateY(-120%) scale(.96); } }
+@keyframes toastBar { to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) { .toast, .toast.out { animation-duration: 1ms; } .toast-bar { animation: none; display: none; } }
 .net-pill { position: fixed; top: env(safe-area-inset-top); left: 0; right: 0; z-index: 30; height: 26px; display: grid; place-items: center; font-size: 13px; font-weight: 620; background: color-mix(in srgb, var(--warn) 24%, var(--bg)); color: var(--warn); animation: pageIn 300ms var(--ease-out); }
 
 /* ---------- pantallas completas ---------- */
@@ -705,7 +720,7 @@ details.card[open] summary { margin-bottom: 8px; }
   .flame.lit .fl-out, .flame.lit .fl-in { animation: none !important; }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .tabbar, .screen-top, .rest, .mini-workout { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--s1); }
+  .tabbar, .screen-top, .rest, .mini-workout, .toast { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--s1); }
 }
 @media (prefers-contrast: more) {
   :root { --line: rgba(128, 128, 128, .5); }
@@ -737,6 +752,7 @@ details.card[open] summary { margin-bottom: 8px; }
 .skip-warn p { margin: 0; font-size: 15px; }
 .skip-card { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--bad) 40%, transparent), var(--shadow); }
 .skip-status { position: relative; }
+.nopush { margin: 10px 2px 0; }
 .skip-note { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 10px 0 0; padding: 6px 6px 6px 14px; border-radius: 14px; background: color-mix(in srgb, var(--bad) 11%, transparent); color: var(--text2); font-size: 15px; }
 .coin-n b.neg { color: var(--bad); }
 .note { position: relative; }
