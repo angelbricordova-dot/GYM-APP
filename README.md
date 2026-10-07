@@ -17,7 +17,7 @@ Se instala en el iPhone como una app.
 | **Puntos de amor** | +10 por check-in con foto, +5 por récord, +20 por meta semanal, bonus por racha y los de los retos aprobados. Los premios **se proponen y el otro acepta, rechaza o contraoferta**. Los canjes generan un cupón. |
 | **Rutinas compartidas** | En *Juntos → Rutinas* uno le **recomienda una rutina** al otro (de sus rutinas, de un entreno reciente o de una plantilla; solo van los ejercicios, series y repeticiones, no tus kilos). Quien la recibe la ve como *Recomendada*, la abre, **empieza ahora**, la guarda en sus rutinas o la descarta. |
 | **Notificaciones push** | Retos, evidencias, aprobaciones, notas, corazones, rutinas recomendadas, premios y “tu pareja ya entrenó”. Cada tipo se puede apagar, y hay un **recordatorio diario** a la hora que elijas si aún no entrenaste. |
-| **Perfil** | Foto de perfil, **color personal** (24 colores o cualquiera), tema **Automático / Día / Noche**, metas, pausa de racha, privacidad del peso (privado por defecto), notificaciones, PIN, **Google**, **Reiniciar de cero** y **Eliminar mi usuario** (ambos piden escribir una palabra para confirmar). |
+| **Perfil** | Foto de perfil (la **encuadras** antes de guardarla: arrastra y acerca con pellizco o el control), **color personal** (24 colores o cualquiera), tema **Automático / Día / Noche**, metas, pausa de racha, privacidad del peso (privado por defecto), notificaciones, PIN, **Google**, **Reiniciar de cero** y **Eliminar mi usuario** (ambos piden escribir una palabra para confirmar). |
 | **Sin señal** | El check-in funciona sin internet: se guarda en el teléfono y se sincroniza (fotos incluidas) al volver la señal. Los retos y premios sí necesitan conexión. |
 
 ## Estructura

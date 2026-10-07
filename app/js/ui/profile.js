@@ -1,11 +1,11 @@
 import { html, useState, useRef, useEffect } from '../../vendor/preact-htm.js';
 import * as S from '../store.js';
 import * as L from '../logic.js';
-import { processImage, toDataURL } from '../photos.js';
 import { getTheme, setTheme, accentVars } from '../theme.js';
 import { Icon, Sheet, Avatar, Stepper, Field, Segmented, toast, cx } from './kit.js';
 import { pushSupport, currentSubscription, enablePush, disablePush, setPrefs, sendTest } from '../push.js';
 import { GoogleButton } from './google-button.js';
+import { AvatarCropper } from './cropper.js';
 import { closeScreen } from './nav.js';
 
 /** Mi perfil: ajustes agrupados como en iOS. */
@@ -21,14 +21,11 @@ export function Profile() {
   const paused = L.isPaused(me);
   useEffect(() => { S.getStatus().then((r) => r.ok && setGoogleId(r.data.googleClientId)); }, []);
 
-  const pickAvatar = async (e) => {
+  const [cropFile, setCropFile] = useState(null);
+  const pickAvatar = (e) => {
     const f = e.target.files[0];
     e.target.value = '';
-    if (!f) return;
-    try {
-      S.profile({ avatar: await toDataURL(await processImage(f, { square: 256, quality: 0.82 })) });
-      toast('Foto de perfil actualizada', { icon: '📸' });
-    } catch { toast('No pude leer esa foto', { icon: '⚠️' }); }
+    if (f) setCropFile(f); // se encuadra antes de guardarla
   };
 
   const [danger, setDanger] = useState(null); // 'reset' | 'delete'
@@ -49,6 +46,7 @@ export function Profile() {
       <div class="avatar-edit">
         <button onClick=${() => file.current.click()} aria-label="Cambiar foto de perfil"><${Avatar} doc=${me} size=${104} ring /><span class="cam-badge"><${Icon} name="camera" size=${16} /></span></button>
         <input ref=${file} type="file" accept="image/*" hidden onChange=${pickAvatar} />
+        ${cropFile && html`<${AvatarCropper} file=${cropFile} onClose=${() => setCropFile(null)} onDone=${(data) => { S.profile({ avatar: data }); setCropFile(null); toast('Foto de perfil actualizada', { icon: '📸' }); }} />`}
         <b class="avatar-name">${me.name}</b>
         ${me.avatar && html`<button class="link" onClick=${() => S.profile({ avatar: null })}>Quitar foto</button>`}
       </div>
