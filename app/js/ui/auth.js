@@ -187,7 +187,7 @@ export function Auth() {
     ${error && html`<p class="notice" role="alert">${error}</p>`}
     <div class="stack">
       ${info && !info.setup && html`<button class="btn primary block lg" onClick=${() => setMode('setup')}>Crear cuenta · Crear nuestro espacio</button>`}
-      ${info?.setup && html`<button class="btn tinted block lg" onClick=${() => { setError(''); setMode('exists'); }}>Crear cuenta nueva (anfitrión)</button>`}
+      ${info?.setup && html`<button class="btn tinted block lg" onClick=${() => { setError(''); setMode(info.canCreate ? 'setup' : 'exists'); }}>Crear cuenta nueva</button>`}
       ${info?.setup && !info.full && html`<button class="btn primary block lg" onClick=${() => { setError(''); setMode('join'); }}>Unirme con código</button>`}
       ${info?.setup && html`<button class=${cx('btn block lg', info.full ? 'primary' : 'tinted')} onClick=${() => { setError(''); setMode('login'); }}>Ya tengo cuenta · Entrar</button>`}
       ${!info && html`<div class="spinner"></div>`}

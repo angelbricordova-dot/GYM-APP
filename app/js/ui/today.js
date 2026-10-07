@@ -7,6 +7,7 @@ import { beginWorkout } from './workout.js';
 import { ChallengeCard, NewChallengeSheet } from './challenges.js';
 import { shareInvite, copyInvite } from '../invite.js';
 import { SkipSheet, SkipDecision } from './skip.js';
+import { JoinOtherSheet } from './link.js';
 
 export function Today() {
   const [skip, setSkip] = useState(false);
@@ -134,6 +135,7 @@ function Banners() {
 
 function PartnerCard({ partner }) {
   const [challenge, setChallenge] = useState(false);
+  const [other, setOther] = useState(() => !!S.state.pendingInvite); // llegó con un enlace de otra persona
   if (!partner) {
     return html`<section class="card rise invite" style="--i:3">
       <h2>Invita a tu pareja</h2>
@@ -143,6 +145,8 @@ function PartnerCard({ partner }) {
         <button class="btn primary sm" onClick=${() => shareInvite(S.state.invite, S.state.me?.name)}><${Icon} name="send" size=${15} /> Compartir enlace</button>
         <button class="btn tinted sm" onClick=${() => copyInvite(S.state.invite)}><${Icon} name="copy" size=${15} /> Copiar</button>
       </div>
+      <button class="link muted" onClick=${() => setOther(true)}>Tengo el código de otra persona</button>
+      ${other && html`<${JoinOtherSheet} onClose=${() => { setOther(false); S.setPendingInvite(null); }} />`}
     </section>`;
   }
   const d = partner.doc;

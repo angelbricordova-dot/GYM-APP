@@ -8,7 +8,7 @@ const TABS = ['today', 'train', 'progress', 'together', 'rewards'];
 // Enlace de invitación (?join=CODIGO): se guarda el código y la pantalla de acceso abre “Únete” con él escrito.
 const joinCode = new URL(location.href).searchParams.get('join');
 if (joinCode) {
-  if (!S.state.auth) S.setPendingInvite(joinCode.toUpperCase().slice(0, 12));
+  S.setPendingInvite(joinCode.toUpperCase().slice(0, 12)); // con sesión y sin pareja abre “Unirme con otro código”
   history.replaceState(null, '', '/');
 }
 

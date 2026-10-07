@@ -80,6 +80,12 @@ No necesitas configurar nada: las llaves (VAPID) se generan solas la primera vez
 - El **recordatorio diario** lo manda una función programada de Netlify (`netlify/functions/reminders.mjs`, cada hora). Corre solo en el sitio publicado, no en `npm run dev`.
 - Si cambias el dominio del sitio, desactiva y vuelve a activar las notificaciones en cada teléfono.
 
+## Desvincularse y cambiar de pareja
+
+- **Perfil → Pareja → Desvincularme**: cualquiera de los dos puede salir (pide escribir DESVINCULAR). Cada quien **se queda con su cuenta, su progreso, sus fotos, su racha y los puntos de amor ya ganados** (los de retos y penalizaciones quedan fijados). Se borra lo compartido: notas del tablero, retos, premios y rutinas. Quien se queda recibe un **código nuevo** (el viejo ya no sirve) y quien sale recibe el suyo.
+- Quien se desvinculó puede **invitar a otra persona** con su enlace nuevo, o **unirse al espacio de otra persona** con el código que le mande (*Hoy* → “Tengo el código de otra persona”, o *Perfil → Pareja*). Pide la misma frase de aceptación.
+- Cada pareja es un **espacio** aparte: nadie ve las fotos, notas ni retos de otras parejas. Una persona nueva puede crear su cuenta y su espacio solo si das el `SETUP_CODE` (sin esa variable en Netlify, el sitio solo permite el primer espacio). Los nombres no se pueden repetir entre personas, porque sirven para entrar.
+
 ## ¿Olvidaste tu nombre o tu PIN?
 
 En la pantalla de entrar toca **Olvidé mi nombre o mi PIN**. Pide el `SETUP_CODE` de Netlify (por eso conviene tenerlo definido: sin él **no hay recuperación**, para que nadie con la URL pueda apoderarse del espacio). Con el código ves los nombres de las dos personas, eliges quién eres y pones un **PIN nuevo**; también existe *Borrar todo y empezar de cero* (pide escribir BORRAR). Cinco fallos seguidos con el código bloquean 10 minutos. El nombre al entrar ya no distingue mayúsculas ni acentos (“angel” = “Ángel”).

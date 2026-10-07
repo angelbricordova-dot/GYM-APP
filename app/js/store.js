@@ -141,6 +141,7 @@ export async function syncNow() {
       if (d.me && !state.dirty) { state.me = d.me; state.meSyncedAt = d.me.updatedAt; }
       state.partner = d.partner ? { id: d.partner.id, name: d.partner.name, updatedAt: d.partner.updatedAt, doc: d.partner.doc || state.partner?.doc || null } : null;
       state.invite = d.inviteCode;
+      if (d.partner && state.pendingInvite) state.pendingInvite = null; // un enlace de invitación ya no aplica si tengo pareja
       state.proposals = d.proposals; state.vouchers = d.vouchers; state.messages = d.messages; state.challenges = d.challenges || []; state.routines = d.routines || [];
       state.account = d.account || null;
       reconcilePoints();
@@ -356,6 +357,20 @@ export async function resetProgress() {
   state.draft = null;
   commit();
   await syncNow();
+  return res;
+}
+
+/** Salir de la vinculación con mi pareja (queda mi progreso; lo compartido se borra). */
+export async function leavePartner() {
+  await syncNow(); // primero subo mis cambios para que no se pisen
+  const res = await call('POST', '/me/leave');
+  if (res.ok) { state.partner = null; state.messages = []; state.challenges = []; state.proposals = []; state.vouchers = []; state.routines = []; state.invite = res.data.inviteCode; commit(); await syncNow(); }
+  return res;
+}
+/** Ya con cuenta y sin pareja: unirme al espacio de otra persona con su código. */
+export async function joinOther({ inviteCode, pact }) {
+  const res = await call('POST', '/me/join', { inviteCode, pact });
+  if (res.ok) { state.pendingInvite = null; commit(); await syncNow(); }
   return res;
 }
 

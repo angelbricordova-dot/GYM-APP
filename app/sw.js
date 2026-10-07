@@ -1,12 +1,12 @@
 // Service worker: la app abre sin internet.
 // Red primero con caché de respaldo: con señal siempre ves la última versión; sin señal, la última guardada.
 // La API (/api) nunca se cachea aquí: los datos viven en el teléfono (localStorage / IndexedDB).
-const CACHE = 'lindwyrm-v5';
+const CACHE = 'lindwyrm-v6';
 const SHELL = [
   '/', '/index.html', '/styles.css', '/manifest.webmanifest', '/vendor/preact-htm.js',
   '/js/main.js', '/js/store.js', '/js/logic.js', '/js/photos.js', '/js/theme.js', '/js/google.js', '/js/push.js', '/js/invite.js',
   '/js/ui/kit.js', '/js/ui/nav.js', '/js/ui/app.js', '/js/ui/auth.js', '/js/ui/google-button.js', '/js/ui/today.js', '/js/ui/train.js', '/js/ui/progress.js',
-  '/js/ui/together.js', '/js/ui/challenges.js', '/js/ui/routines.js', '/js/ui/supplements.js', '/js/ui/skip.js', '/js/ui/cropper.js', '/js/ui/rewards.js', '/js/ui/workout.js', '/js/ui/checkin.js', '/js/ui/profile.js', '/js/ui/calendar.js',
+  '/js/ui/together.js', '/js/ui/challenges.js', '/js/ui/routines.js', '/js/ui/supplements.js', '/js/ui/skip.js', '/js/ui/cropper.js', '/js/ui/link.js', '/js/ui/rewards.js', '/js/ui/workout.js', '/js/ui/checkin.js', '/js/ui/profile.js', '/js/ui/calendar.js',
   '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png',
 ];
 

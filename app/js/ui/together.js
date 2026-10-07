@@ -7,6 +7,7 @@ import { ChallengesPanel } from './challenges.js';
 import { RoutinesPanel } from './routines.js';
 import { SuppPanel } from './supplements.js';
 import { PenaltyForm } from './skip.js';
+import { JoinOtherSheet } from './link.js';
 import { shareInvite, copyInvite } from '../invite.js';
 import { openScreen, closeScreen } from './nav.js';
 import { Summary } from './progress.js';
@@ -14,6 +15,7 @@ import { Summary } from './progress.js';
 /** Todo lo de a dos: retos del día, tablero de motivación y rutinas recomendadas. El perfil de mi pareja se abre desde su foto. */
 export function Together() {
   const partner = S.state.partner;
+  const [other, setOther] = useState(() => !!S.state.pendingInvite);
   const [tab, setTab] = useState(() => (S.challengesForMe().length + S.challengesToReview().length > 0 ? 'challenges' : 'board'));
   const pending = S.challengesForMe().length + S.challengesToReview().length;
   const notes = S.unread();
@@ -30,7 +32,9 @@ export function Together() {
         <button class="btn primary" onClick=${() => shareInvite(S.state.invite, S.state.me?.name)}><${Icon} name="send" size=${16} /> Compartir enlace</button>
         <button class="btn tinted" onClick=${() => copyInvite(S.state.invite)}><${Icon} name="copy" size=${16} /> Copiar</button>
       </div>
+      <button class="link muted" onClick=${() => setOther(true)}>Tengo el código de otra persona</button>
     </section>
+    ${other && html`<${JoinOtherSheet} onClose=${() => { setOther(false); S.setPendingInvite(null); }} />`}
   </div>`;
 
   return html`<div class="view-in">

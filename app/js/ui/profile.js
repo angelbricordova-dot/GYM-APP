@@ -6,6 +6,7 @@ import { Icon, Sheet, Avatar, Stepper, Field, Segmented, toast, cx } from './kit
 import { pushSupport, currentSubscription, enablePush, disablePush, setPrefs, sendTest } from '../push.js';
 import { GoogleButton } from './google-button.js';
 import { AvatarCropper } from './cropper.js';
+import { JoinOtherSheet } from './link.js';
 import { closeScreen } from './nav.js';
 
 /** Mi perfil: ajustes agrupados como en iOS. */
@@ -28,7 +29,8 @@ export function Profile() {
     if (f) setCropFile(f); // se encuadra antes de guardarla
   };
 
-  const [danger, setDanger] = useState(null); // 'reset' | 'delete'
+  const [danger, setDanger] = useState(null); // 'reset' | 'delete' | 'leave'
+  const [joinOther, setJoinOther] = useState(false);
 
   const link = async (credential) => {
     const r = await S.linkGoogle(credential);
@@ -92,6 +94,14 @@ export function Profile() {
         <button class="row" onClick=${downloadData}><span class="lead"><${Icon} name="copy" size=${18} /></span><div class="grow"><b>Descargar mis datos</b></div></button>
         <button class="row danger" onClick=${() => { if (confirm('¿Cerrar sesión en este teléfono? Tus datos siguen guardados en la nube.')) { closeScreen(); S.logout(); } }}><span class="lead"><${Icon} name="logout" size=${18} /></span><div class="grow"><b>Cerrar sesión</b></div></button>
       </div>
+      <h3 class="sec-h">Pareja</h3>
+      <div class="group">
+        ${S.state.partner
+          ? html`<button class="row danger" onClick=${() => setDanger('leave')}><span class="lead"><${Icon} name="logout" size=${18} /></span><div class="grow"><b>Desvincularme de ${S.state.partner.name}</b><small class="muted">Sales de “Juntos”; tu progreso se queda contigo</small></div><${Icon} name="right" size=${16} class="chev" /></button>`
+          : html`<button class="row" onClick=${() => setJoinOther(true)}><span class="lead"><${Icon} name="heart" size=${18} /></span><div class="grow"><b>Unirme con el código de otra persona</b><small class="muted">Para vincularte con alguien que te invitó</small></div><${Icon} name="right" size=${16} class="chev" /></button>`}
+      </div>
+      ${joinOther && html`<${JoinOtherSheet} onClose=${() => setJoinOther(false)} />`}
+
       <h3 class="sec-h">Zona de peligro</h3>
       <div class="group">
         <button class="row danger" onClick=${() => setDanger('reset')}><span class="lead"><${Icon} name="history" size=${18} /></span><div class="grow"><b>Reiniciar de cero</b><small class="muted">Borra todo tu progreso y empieza otra vez</small></div><${Icon} name="right" size=${16} class="chev" /></button>
@@ -205,6 +215,11 @@ const COPY = {
     lose: ['Todos tus entrenos y ejercicios', 'Tu racha, check-ins y fotos del espejo', 'Tu peso registrado y tus puntos de amor', 'Tus rutinas y pausas'],
     keep: ['Tu cuenta, nombre, foto de perfil y color', 'Tus metas y ajustes', 'Tu pareja, sus datos y las notas del tablero'],
   },
+  leave: {
+    title: 'Desvincularme', word: 'DESVINCULAR', cta: 'Desvincularme de mi pareja',
+    lose: ['Las notas del tablero, los retos, los premios y las rutinas que compartían', 'Su vista del progreso de la otra persona (y la tuya para ella o él)'],
+    keep: ['Tu cuenta, tu progreso, tus fotos y tu racha', 'Los puntos de amor que ya ganaste (retos y penalizaciones incluidos)', 'Podrás invitar a otra persona o unirte con el código de alguien más'],
+  },
   delete: {
     title: 'Eliminar mi usuario', word: 'ELIMINAR', cta: 'Eliminar mi cuenta para siempre',
     lose: ['Tu cuenta, tu PIN y tu vínculo con Google', 'Todo tu progreso, fotos y puntos', 'Tus notas, retos, rutinas y premios propuestos', 'Tu lugar en el espacio: tu pareja se queda sola con un código nuevo'],
@@ -219,10 +234,11 @@ function DangerSheet({ kind, onClose }) {
   const ok = typed.trim().toUpperCase() === c.word;
   const go = async () => {
     setBusy(true);
-    const r = kind === 'reset' ? await S.resetProgress() : await S.deleteAccount();
+    const r = kind === 'reset' ? await S.resetProgress() : kind === 'leave' ? await S.leavePartner() : await S.deleteAccount();
     setBusy(false);
     if (!r.ok) return toast(r.data.error || 'No se pudo completar. Revisa tu conexión.', { icon: '⚠️' });
     if (kind === 'reset') { toast('Listo: empiezas de cero', { icon: '🌱' }); onClose(); }
+    if (kind === 'leave') { toast('Te desvinculaste. Ya puedes invitar a otra persona', { icon: '👋' }); onClose(); }
   };
   return html`<${Sheet} title=${c.title} onClose=${onClose}>
     <div class="danger-box"><b>Esto no se puede deshacer.</b></div>

@@ -33,6 +33,23 @@ async function secret() {
   return meta?.secret;
 }
 
+// ---------- espacios ----------
+// Un “espacio” es una pareja (1 o 2 personas). Todo lo compartido lleva el id de su espacio.
+// Los datos anteriores (un solo espacio) se migran al leer: su id es “main” y las cosas viejas sin `space` pertenecen a él.
+const LEGACY_SPACE = 'main';
+async function getMeta() {
+  const meta = await db.get('meta');
+  if (meta && !meta.spaces) {
+    meta.spaces = [{ id: LEGACY_SPACE, inviteCode: meta.inviteCode, users: [...meta.users], createdAt: meta.createdAt || Date.now() }];
+    delete meta.inviteCode;
+    await db.set('meta', meta);
+  }
+  return meta;
+}
+const spaceOf = (meta, uid) => meta?.spaces.find((x) => x.users.includes(uid));
+const inSpace = (x, sp) => !!x && !!sp && (x.space || LEGACY_SPACE) === sp.id;
+const mySpace = async (user) => spaceOf(await getMeta(), user.id);
+
 async function sign(uid) {
   const body = b64(JSON.stringify({ uid, exp: Date.now() + TOKEN_DAYS * 864e5 }));
   const mac = createHmac('sha256', await secret()).update(body).digest('base64url');
@@ -114,70 +131,90 @@ const validCreds = (name, pin) => {
 
 // ---------- rutas ----------
 async function status() {
-  const meta = await db.get('meta');
-  return json(200, { setup: !!meta, full: !!meta && meta.users.length >= 2, needsSetupCode: !!process.env.SETUP_CODE, googleClientId: process.env.GOOGLE_CLIENT_ID || null });
+  const meta = await getMeta();
+  return json(200, { setup: !!meta, full: !!meta && meta.spaces.every((x) => x.users.length >= 2), canCreate: !meta || !!process.env.SETUP_CODE, needsSetupCode: !!process.env.SETUP_CODE, googleClientId: process.env.GOOGLE_CLIENT_ID || null });
+}
+
+/** ¿Ya hay alguien con ese nombre (o ese Google)? El nombre sirve para entrar, así que no puede repetirse. */
+async function identityTaken(name, google) {
+  const users = (await allUsers()).filter(Boolean);
+  if (users.some((u) => norm(u.name) === norm(name))) return fail(409, 'Ese nombre ya está en uso; usa otro.');
+  if (google && users.some((u) => u.googleSub === google.sub)) return fail(409, 'Esa cuenta de Google ya tiene usuario. Usa “Entrar”.');
+  return null;
 }
 
 async function setup(body, google) {
-  if (await db.get('meta')) return fail(409, 'Este espacio ya fue creado. Usa “Entrar” o “Unirme con código”.');
-  if (process.env.SETUP_CODE && body.setupCode !== process.env.SETUP_CODE) return fail(403, 'Código de configuración incorrecto.');
+  let meta = await getMeta();
+  const code = process.env.SETUP_CODE;
+  // El primer espacio se crea libremente (con SETUP_CODE si existe); otros espacios solo con SETUP_CODE.
+  if (meta && !code) return fail(409, 'Este espacio ya fue creado. Usa “Entrar” o “Unirme con código”.');
+  if (code && body.setupCode !== code) return fail(403, 'Código de configuración incorrecto.');
   const name = clean(body.name || google?.name, 20);
   const bad = google ? (name ? null : 'Escribe tu nombre.') : validCreds(body.name, body.pin);
   if (bad) return fail(400, bad);
+  if (meta) { const taken = await identityTaken(name, google); if (taken) return taken; }
   const invite = newInviteCode();
-  await db.set('meta', { secret: randomBytes(32).toString('base64'), inviteCode: invite, users: [], createdAt: Date.now() });
+  if (!meta) await db.set('meta', { secret: randomBytes(32).toString('base64'), users: [], spaces: [], createdAt: Date.now() });
   const user = await createUser({ name, pin: google ? null : String(body.pin), color: '#34d6a0', google });
-  const meta = await db.get('meta');
+  meta = await getMeta();
   meta.users.push(user.id);
+  meta.spaces.push({ id: randomUUID(), inviteCode: invite, users: [user.id], createdAt: Date.now() });
   await db.set('meta', meta);
   return json(200, { token: await sign(user.id), uid: user.id, inviteCode: invite });
 }
 
 const newInviteCode = () => Array.from(randomBytes(6), (b) => L.INVITE_ALPHABET[b % L.INVITE_ALPHABET.length]).join('');
 
-/** Valida un código de invitación con freno anti-adivinanza (8 fallos → 10 minutos de espera). Devuelve una respuesta de error o null. */
-async function checkInvite(meta, code) {
-  if (!meta) return fail(404, 'Aún no existe el espacio. Que la primera persona lo cree.');
-  if (meta.users.length >= 2) return fail(409, 'Este espacio ya tiene a sus dos personas.');
+/** Busca el espacio de un código de invitación, con freno anti-adivinanza (8 fallos → 10 minutos). Devuelve { err } o { sp }. */
+async function findInvite(meta, code) {
+  if (!meta) return { err: fail(404, 'Aún no existe el espacio. Que la primera persona lo cree.') };
   const f = meta.inviteFails || { n: 0, until: 0 };
-  if (f.until > Date.now()) return fail(429, 'Demasiados intentos con el código. Espera unos minutos.');
-  if (L.canonInvite(code) !== L.canonInvite(meta.inviteCode)) {
+  if (f.until > Date.now()) return { err: fail(429, 'Demasiados intentos con el código. Espera unos minutos.') };
+  const sp = L.canonInvite(code) ? meta.spaces.find((x) => L.canonInvite(x.inviteCode) === L.canonInvite(code)) : null;
+  if (!sp) {
     f.n += 1;
     if (f.n >= 8) { f.until = Date.now() + 10 * 60_000; f.n = 0; }
     meta.inviteFails = f;
     await db.set('meta', meta);
-    return fail(403, 'Código de invitación incorrecto.');
+    return { err: fail(403, 'Código de invitación incorrecto.') };
   }
+  if (sp.users.length >= 2) return { err: fail(409, 'Este espacio ya tiene a sus dos personas.') };
   if (f.n) { meta.inviteFails = { n: 0, until: 0 }; await db.set('meta', meta); }
-  return null;
+  return { sp };
 }
 
 /** Comprueba un código sin gastar el espacio y devuelve el nombre de quien invita (para el mensaje de bienvenida). */
 async function inviteInfo(url) {
-  const meta = await db.get('meta');
-  const badCode = await checkInvite(meta, url.searchParams.get('code'));
-  if (badCode) return badCode;
-  return json(200, { ok: true, inviter: (await db.get(`user/${meta.users[0]}`)).name });
+  const meta = await getMeta();
+  const { err, sp } = await findInvite(meta, url.searchParams.get('code'));
+  if (err) return err;
+  return json(200, { ok: true, inviter: (await db.get(`user/${sp.users[0]}`)).name });
+}
+
+/** Primera nota del tablero: la aceptación. Queda como recuerdo para los dos. */
+async function welcomeNote(user, sp) {
+  const note = { id: randomUUID(), space: sp.id, from: user.id, text: 'Acepto, mi amor. Te amo mucho 💗', kind: 'text', ref: null, likes: [], ts: Date.now() };
+  await db.set(`message/${String(note.ts).padStart(13, '0')}-${note.id}`, note);
+  await push.notify(sp.users[0], { type: 'notes', title: `💌 ${first(user.name)} aceptó unirse`, body: note.text, url: '/?tab=together' });
 }
 
 async function join(body, google) {
-  const meta = await db.get('meta');
-  const badCode = await checkInvite(meta, body.inviteCode);
-  if (badCode) return badCode;
+  let meta = await getMeta();
+  const { err, sp } = await findInvite(meta, body.inviteCode);
+  if (err) return err;
   if (!L.pactOk(body.pact)) return fail(400, `Para unirte escribe: “${L.PACT_PHRASE}”.`);
   const name = clean(body.name || google?.name, 20);
   const bad = google ? (name ? null : 'Escribe tu nombre.') : validCreds(body.name, body.pin);
   if (bad) return fail(400, bad);
-  const inviter = await db.get(`user/${meta.users[0]}`);
-  if (norm(inviter.name) === norm(name)) return fail(409, 'Ese nombre ya está en uso; usa otro.');
-  if (google && inviter.googleSub === google.sub) return fail(409, 'Esa cuenta de Google ya está en uso por tu pareja.');
+  const taken = await identityTaken(name, google);
+  if (taken) return taken;
   const user = await createUser({ name, pin: google ? null : String(body.pin), color: '#ff5c93', google });
+  meta = await getMeta();
+  const target = meta.spaces.find((x) => x.id === sp.id);
   meta.users.push(user.id);
+  target.users.push(user.id);
   await db.set('meta', meta);
-  // Primera nota del tablero: la aceptación. Queda como recuerdo para los dos.
-  const note = { id: randomUUID(), from: user.id, text: 'Acepto, mi amor. Te amo mucho 💗', kind: 'text', ref: null, likes: [], ts: Date.now() };
-  await db.set(`message/${String(note.ts).padStart(13, '0')}-${note.id}`, note);
-  await push.notify(meta.users[0], { type: 'notes', title: `💌 ${first(name)} aceptó unirse`, body: note.text, url: '/?tab=together' });
+  await welcomeNote(user, target);
   return json(200, { token: await sign(user.id), uid: user.id });
 }
 
@@ -281,29 +318,36 @@ async function recover(body) {
   return fail(400, 'Acción inválida.');
 }
 
-const partnerOf = async (user) => (await db.get('meta')).users.find((id) => id !== user.id);
+const partnerOf = async (user) => (await mySpace(user))?.users.find((id) => id !== user.id);
 /** Avisa a la pareja sin bloquear ni romper la acción que lo originó. */
 const tell = async (user, msg) => { const to = await partnerOf(user); return to ? push.notify(to, msg) : null; };
 const first = (s) => String(s).split(' ')[0];
 
-async function listItems(prefix, limit) {
-  const keys = (await db.list(prefix)).slice(-limit);
-  return (await Promise.all(keys.map((k) => db.get(k)))).filter(Boolean);
+/** Las últimas `limit` cosas compartidas de MI espacio (las claves van por fecha; se recorre desde las más nuevas). */
+async function listItems(prefix, limit, sp) {
+  const keys = await db.list(prefix);
+  const out = [];
+  for (let i = keys.length - 1; i >= 0 && out.length < limit; i -= 20) {
+    const items = await Promise.all(keys.slice(Math.max(0, i - 19), i + 1).map((k) => db.get(k)));
+    for (let j = items.length - 1; j >= 0 && out.length < limit; j--) if (inSpace(items[j], sp)) out.push(items[j]);
+  }
+  return out.reverse();
 }
 
 async function sync(user, url) {
-  const meta = await db.get('meta');
-  const partnerId = meta.users.find((id) => id !== user.id);
+  const meta = await getMeta();
+  const sp = spaceOf(meta, user.id);
+  const partnerId = sp?.users.find((id) => id !== user.id);
   const partnerRec = partnerId ? await db.get(`user/${partnerId}`) : null;
   const meAt = Number(url.searchParams.get('meAt')) || 0;
   const partnerAt = Number(url.searchParams.get('partnerAt')) || 0;
-  const [proposals, vouchers, messages, challenges, routines] = await Promise.all([listItems('proposal/', 100), listItems('voucher/', 60), listItems('message/', 60), listItems('challenge/', 80), listItems('routine/', 40)]);
+  const [proposals, vouchers, messages, challenges, routines] = await Promise.all([listItems('proposal/', 100, sp), listItems('voucher/', 60, sp), listItems('message/', 60, sp), listItems('challenge/', 80, sp), listItems('routine/', 40, sp)]);
   return json(200, {
     me: user.doc.updatedAt > meAt ? user.doc : null,
     partner: partnerRec
       ? { id: partnerRec.id, name: partnerRec.name, doc: partnerRec.doc.updatedAt > partnerAt ? publicDoc(partnerRec.doc) : null, updatedAt: partnerRec.doc.updatedAt }
       : null,
-    inviteCode: !partnerRec && meta.users[0] === user.id ? meta.inviteCode : null,
+    inviteCode: sp && !partnerRec ? sp.inviteCode : null,
     proposals, vouchers, messages, challenges, routines,
     account: { google: !!user.googleSub, email: user.email || '', hasPin: !!user.hash, push: { devices: (user.push || []).length, prefs: { ...DEFAULT_PREFS, ...user.pushPrefs } } },
     serverTime: Date.now(),
@@ -344,8 +388,9 @@ async function postPhoto(user, req, url) {
   return json(200, { ok: true });
 }
 
-async function getPhoto(uid, pid) {
+async function getPhoto(user, uid, pid) {
   if (!/^[a-zA-Z0-9-]+$/.test(uid) || !/^[a-z0-9-]{6,40}$/.test(pid)) return fail(400, 'Id inválido.');
+  if (uid !== user.id && !(await mySpace(user))?.users.includes(uid)) return fail(404, 'No existe esa foto.');
   const bin = await db.getBin(`photo/${uid}/${pid}`);
   if (!bin) return fail(404, 'No existe esa foto.');
   return new Response(bin.data, { headers: { 'content-type': bin.type, 'cache-control': 'private, max-age=31536000, immutable' } });
@@ -356,7 +401,8 @@ async function postProposal(user, body) {
   const cost = Math.round(Number(body.cost));
   if (!name || !(cost >= 1 && cost <= 9999)) return fail(400, 'Pon un nombre y un costo entre 1 y 9999.');
   const id = randomUUID();
-  const p = { id, name, emoji: clean(body.emoji, 4) || '🎁', note: clean(body.note, 140), cost, by: user.id, lastBy: user.id, status: 'pending', history: [{ by: user.id, cost, ts: Date.now() }], createdAt: Date.now() };
+  const sp = await mySpace(user);
+  const p = { id, space: sp?.id, name, emoji: clean(body.emoji, 4) || '🎁', note: clean(body.note, 140), cost, by: user.id, lastBy: user.id, status: 'pending', history: [{ by: user.id, cost, ts: Date.now() }], createdAt: Date.now() };
   await db.set(`proposal/${id}`, p);
   await tell(user, { type: 'prizes', title: `${first(user.name)} propuso un premio ${p.emoji}`, body: `${p.name} · ${p.cost} puntos de amor`, url: '/?tab=rewards' });
   return json(200, { proposal: p });
@@ -364,7 +410,7 @@ async function postProposal(user, body) {
 
 async function decideProposal(user, id, body) {
   const p = await db.get(`proposal/${id}`);
-  if (!p) return fail(404, 'No existe esa propuesta.');
+  if (!inSpace(p, await mySpace(user))) return fail(404, 'No existe esa propuesta.');
   if (p.status !== 'pending') return fail(409, 'Esa propuesta ya fue resuelta.');
   if (p.lastBy === user.id) return fail(403, 'Ahora le toca decidir a tu pareja.');
   if (body.action === 'accept') { p.status = 'accepted'; p.decidedBy = user.id; }
@@ -383,18 +429,18 @@ async function decideProposal(user, id, body) {
 
 async function postVoucher(user, body) {
   const p = await db.get(`proposal/${body.proposalId}`);
-  if (!p || p.status !== 'accepted') return fail(404, 'Ese premio no está activo.');
+  if (!inSpace(p, await mySpace(user)) || p.status !== 'accepted') return fail(404, 'Ese premio no está activo.');
   const id = randomUUID();
-  const v = { id, proposalId: p.id, name: p.name, emoji: p.emoji, cost: p.cost, by: user.id, status: 'open', ts: Date.now() };
+  const v = { id, space: p.space, proposalId: p.id, name: p.name, emoji: p.emoji, cost: p.cost, by: user.id, status: 'open', ts: Date.now() };
   await db.set(`voucher/${String(v.ts).padStart(13, '0')}-${id}`, v);
   await tell(user, { type: 'prizes', title: `${first(user.name)} canjeó ${p.emoji} ${p.name}`, body: 'Tienes un cupón por cumplir', url: '/?tab=rewards' });
   return json(200, { voucher: v });
 }
 
-async function doneVoucher(id) {
+async function doneVoucher(user, id) {
   const key = (await db.list('voucher/')).find((k) => k.endsWith(`-${id}`));
-  if (!key) return fail(404, 'No existe ese cupón.');
-  const v = await db.get(key);
+  const v = key && (await db.get(key));
+  if (!inSpace(v, await mySpace(user))) return fail(404, 'No existe ese cupón.');
   v.status = 'done'; v.doneAt = Date.now();
   await db.set(key, v);
   return json(200, { voucher: v });
@@ -410,7 +456,7 @@ async function postMessage(user, body) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(ref?.date || '')) return fail(400, 'Falta la fecha.');
     ref = { uid: user.id, date: ref.date };
   }
-  const m = { id, from: user.id, text, kind, ref, likes: [], ts: Date.now() };
+  const m = { id, space: (await mySpace(user))?.id, from: user.id, text, kind, ref, likes: [], ts: Date.now() };
   if (kind === 'skip') m.penalty = null;
   await db.set(`message/${String(m.ts).padStart(13, '0')}-${id}`, m);
   await tell(user, kind === 'reaction'
@@ -426,7 +472,7 @@ const findKey = async (prefix, id) => (await db.list(prefix)).find((k) => k.ends
 async function likeMessage(user, id) {
   const key = await findKey('message/', id);
   const m = key && (await db.get(key));
-  if (!m) return fail(404, 'No existe ese mensaje.');
+  if (!inSpace(m, await mySpace(user))) return fail(404, 'No existe ese mensaje.');
   m.likes = m.likes || [];
   m.likes = m.likes.includes(user.id) ? m.likes.filter((x) => x !== user.id) : [...m.likes, user.id];
   await db.set(key, m);
@@ -438,7 +484,7 @@ async function likeMessage(user, id) {
 async function penalizeMessage(user, id, body) {
   const key = await findKey('message/', id);
   const m = key && (await db.get(key));
-  if (!m || m.kind !== 'skip') return fail(404, 'No existe ese aviso.');
+  if (!inSpace(m, await mySpace(user)) || m.kind !== 'skip') return fail(404, 'No existe ese aviso.');
   if (m.from === user.id) return fail(403, 'Eso lo decide tu pareja.');
   if (m.penalty) return fail(409, 'Ya decidiste cuántos puntos quitar.');
   const points = Math.round(Number(body.points));
@@ -452,7 +498,7 @@ async function penalizeMessage(user, id, body) {
 async function deleteMessage(user, id) {
   const key = await findKey('message/', id);
   const m = key && (await db.get(key));
-  if (!m) return fail(404, 'No existe ese mensaje.');
+  if (!inSpace(m, await mySpace(user))) return fail(404, 'No existe ese mensaje.');
   if (m.from !== user.id) return fail(403, 'Solo quien lo escribió puede borrarlo.');
   await db.del(key);
   return json(200, { ok: true });
@@ -469,14 +515,14 @@ async function loadChallenge(id) {
 }
 
 async function postChallenge(user, body) {
-  const meta = await db.get('meta');
-  const to = meta.users.find((x) => x !== user.id);
+  const sp = await mySpace(user);
+  const to = sp?.users.find((x) => x !== user.id);
   if (!to) return fail(409, 'Tu pareja aún no se une.');
   const title = clean(body.title, 80);
   const points = Math.round(Number(body.points));
   if (!title || !(points >= 1 && points <= 500)) return fail(400, 'Escribe el reto y unos puntos entre 1 y 500.');
   const date = /^\d{4}-\d{2}-\d{2}$/.test(body.date || '') ? body.date : new Date().toISOString().slice(0, 10);
-  const c = { id: randomUUID(), ts: Date.now(), from: user.id, to, title, detail: clean(body.detail, 140), points, date, status: 'open', evidence: null };
+  const c = { id: randomUUID(), space: sp.id, ts: Date.now(), from: user.id, to, title, detail: clean(body.detail, 140), points, date, status: 'open', evidence: null };
   await db.set(challengeKey(c), c);
   await push.notify(to, { type: 'challenges', title: `${first(user.name)} te retó 🎯`, body: `${title} · ${points} puntos de amor`, url: '/?tab=today' });
   return json(200, { challenge: c });
@@ -484,7 +530,7 @@ async function postChallenge(user, body) {
 
 async function challengeAction(user, id, action, req, url, body) {
   const f = await loadChallenge(id);
-  if (!f) return fail(404, 'No existe ese reto.');
+  if (!f || !inSpace(f.c, await mySpace(user))) return fail(404, 'No existe ese reto.');
   const { key, c } = f;
   const isTo = c.to === user.id, isFrom = c.from === user.id;
   if (action === 'start') {
@@ -521,9 +567,9 @@ async function challengeAction(user, id, action, req, url, body) {
   return json(200, { challenge: c });
 }
 
-async function getEvidence(id) {
+async function getEvidence(user, id) {
   const f = await loadChallenge(id);
-  const bin = f && f.c.evidence && (await db.getBin(`evidence/${id}`));
+  const bin = f && inSpace(f.c, await mySpace(user)) && f.c.evidence && (await db.getBin(`evidence/${id}`));
   if (!bin) return fail(404, 'No hay evidencia para ese reto.');
   return new Response(bin.data, { headers: { 'content-type': bin.type, 'cache-control': 'private, max-age=3600' } });
 }
@@ -541,7 +587,7 @@ async function postRoutine(user, body) {
     .map((e) => ({ name: clean(typeof e === 'string' ? e : e?.name, 40), sets: Math.min(10, Math.max(1, Math.round(Number(e?.sets)) || 3)), reps: Math.min(50, Math.max(1, Math.round(Number(e?.reps)) || 10)) }))
     .filter((e) => e.name);
   if (!name || !exercises.length) return fail(400, 'Ponle nombre y al menos un ejercicio.');
-  const r = { id: randomUUID(), ts: Date.now(), from: user.id, to, name, note: clean(body.note, 200), exercises, status: 'new' };
+  const r = { id: randomUUID(), space: (await mySpace(user)).id, ts: Date.now(), from: user.id, to, name, note: clean(body.note, 200), exercises, status: 'new' };
   await db.set(routineKey(r), r);
   await push.notify(to, { type: 'routines', title: `${first(user.name)} te recomendó una rutina 🏋️`, body: `${name} · ${exercises.length} ejercicios`, url: '/?tab=together' });
   return json(200, { routine: r });
@@ -550,7 +596,7 @@ async function postRoutine(user, body) {
 async function routineAction(user, id, action) {
   const key = await findKey('routine/', id);
   const r = key && (await db.get(key));
-  if (!r) return fail(404, 'No existe esa rutina.');
+  if (!inSpace(r, await mySpace(user))) return fail(404, 'No existe esa rutina.');
   if (action === 'delete') {
     if (r.from !== user.id) return fail(403, 'Solo quien la compartió puede quitarla.');
     await db.del(key);
@@ -591,7 +637,7 @@ async function resetMe(user) {
 
 /** Elimina la cuenta y todo lo que esta persona creó. Si era la última, el espacio queda libre para crearse de nuevo. */
 async function deleteMe(user) {
-  const meta = await db.get('meta');
+  const meta = await getMeta();
   await wipePhotos(user.id);
   for (const k of await db.list('challenge/')) {
     const c = await db.get(k);
@@ -602,8 +648,84 @@ async function deleteMe(user) {
   }
   await db.del(`user/${user.id}`);
   meta.users = meta.users.filter((id) => id !== user.id);
+  const sp = spaceOf(meta, user.id);
+  if (sp) {
+    sp.users = sp.users.filter((id) => id !== user.id);
+    if (!sp.users.length) meta.spaces = meta.spaces.filter((x) => x.id !== sp.id);
+    else sp.inviteCode = newInviteCode();
+  }
   if (!meta.users.length) await db.del('meta');
-  else { meta.inviteCode = newInviteCode(); await db.set('meta', meta); }
+  else await db.set('meta', meta);
+  return json(200, { ok: true });
+}
+
+// ---------- desvincularse y unirse a otra persona ----------
+const SHARED = ['message/', 'proposal/', 'voucher/', 'challenge/', 'routine/'];
+
+/**
+ * Fija como “banco” los puntos de amor ya ganados con retos de la pareja y las penalizaciones decididas,
+ * para que no se pierdan al borrar lo compartido (las entradas con clave `bank:` no se recalculan).
+ */
+function bankPoints(doc, items) {
+  doc.ledger = doc.ledger || [];
+  const has = (k) => doc.ledger.some((e) => e.key === k || e.key === `bank:${k}`);
+  for (const e of doc.ledger) if (e.key && /^(challenge|skip):/.test(e.key)) e.key = `bank:${e.key}`;
+  const now = Date.now();
+  for (const c of items.challenge) {
+    if (c.status === 'approved' && c.to === doc.id && (c.approvedAt || 0) > (doc.resetAt || 0) && !has(`challenge:${c.id}`)) {
+      doc.ledger.push({ id: randomUUID(), ts: now, key: `bank:challenge:${c.id}`, delta: c.points, reason: `Reto cumplido: ${c.title}`, date: new Date(c.approvedAt || c.ts).toISOString().slice(0, 10) });
+    }
+  }
+  for (const m of items.message) {
+    const d = m.ref?.date;
+    if (m.kind === 'skip' && m.from === doc.id && m.penalty && d && doc.skips?.[d] && !doc.checkins?.[d] && !has(`skip:${d}`)) {
+      doc.ledger.push({ id: randomUUID(), ts: now, key: `bank:skip:${d}`, delta: -m.penalty.points, reason: `No fui: ${String(m.text).slice(0, 60)}`, date: d });
+    }
+  }
+  doc.updatedAt = Math.max(now, (doc.updatedAt || 0) + 1);
+}
+
+/** Salir de la vinculación: se conservan los progresos y puntos de cada quien; lo compartido (notas, retos, premios, rutinas) se borra. */
+async function leaveMe(user) {
+  const meta = await getMeta();
+  const sp = spaceOf(meta, user.id);
+  const otherId = sp?.users.find((id) => id !== user.id);
+  if (!otherId) return fail(409, 'No estás vinculado con nadie.');
+  const other = await db.get(`user/${otherId}`);
+  const items = {};
+  for (const prefix of SHARED) {
+    items[prefix.slice(0, -1)] = [];
+    for (const k of await db.list(prefix)) { const x = await db.get(k); if (inSpace(x, sp)) items[prefix.slice(0, -1)].push({ ...x, _key: k }); }
+  }
+  bankPoints(user.doc, items);
+  if (other) bankPoints(other.doc, items);
+  for (const list of Object.values(items)) for (const x of list) await db.del(x._key);
+  for (const c of items.challenge) await db.del(`evidence/${c.id}`);
+  await db.set(`user/${user.id}`, user);
+  if (other) await db.set(`user/${other.id}`, other);
+
+  sp.users = [otherId];
+  sp.inviteCode = newInviteCode(); // el código viejo ya no sirve
+  const mine = { id: randomUUID(), inviteCode: newInviteCode(), users: [user.id], createdAt: Date.now() };
+  meta.spaces.push(mine);
+  await db.set('meta', meta);
+  await push.notify(otherId, { title: `${first(user.name)} se desvinculó`, body: 'Ya puedes invitar a otra persona con tu nuevo enlace.', url: '/?tab=together' });
+  return json(200, { ok: true, inviteCode: mine.inviteCode });
+}
+
+/** Ya con cuenta y sin pareja: unirse al espacio de otra persona con su código (y la frase de aceptación). */
+async function joinOther(user, body) {
+  const meta = await getMeta();
+  const mine = spaceOf(meta, user.id);
+  if (!mine || mine.users.length !== 1) return fail(409, 'Primero desvincúlate de tu pareja actual.');
+  const { err, sp } = await findInvite(meta, body.inviteCode);
+  if (err) return err;
+  if (sp.id === mine.id) return fail(409, 'Ese es tu propio código de invitación.');
+  if (!L.pactOk(body.pact)) return fail(400, `Para unirte escribe: “${L.PACT_PHRASE}”.`);
+  meta.spaces = meta.spaces.filter((x) => x.id !== mine.id); // su espacio vacío desaparece
+  sp.users.push(user.id);
+  await db.set('meta', meta);
+  await welcomeNote(user, sp);
   return json(200, { ok: true });
 }
 
@@ -643,22 +765,24 @@ export default async function handler(req) {
     if (m === 'PUT' && path === '/me') return await putMe(user, req);
     if (m === 'POST' && path === '/photo') return await postPhoto(user, req, url);
     let r;
-    if (m === 'GET' && (r = path.match(/^\/photo\/([^/]+)\/([^/]+)$/))) return await getPhoto(r[1], r[2]);
+    if (m === 'GET' && (r = path.match(/^\/photo\/([^/]+)\/([^/]+)$/))) return await getPhoto(user, r[1], r[2]);
     if (m === 'POST' && path === '/proposals') return await postProposal(user, await body());
     if (m === 'POST' && (r = path.match(/^\/proposals\/([^/]+)$/))) return await decideProposal(user, r[1], await body());
     if (m === 'POST' && path === '/vouchers') return await postVoucher(user, await body());
-    if (m === 'POST' && (r = path.match(/^\/vouchers\/([^/]+)\/done$/))) return await doneVoucher(r[1]);
+    if (m === 'POST' && (r = path.match(/^\/vouchers\/([^/]+)\/done$/))) return await doneVoucher(user, r[1]);
     if (m === 'POST' && path === '/messages') return await postMessage(user, await body());
     if (path.startsWith('/push/')) return await pushRoutes(user, path, m === 'POST' ? await body() : {}, m);
     if (m === 'POST' && path === '/me/reset') return await resetMe(user);
     if (m === 'POST' && path === '/me/delete') return await deleteMe(user);
+    if (m === 'POST' && path === '/me/leave') return await leaveMe(user);
+    if (m === 'POST' && path === '/me/join') return await joinOther(user, await body());
     if (m === 'POST' && path === '/routines') return await postRoutine(user, await body());
     if (m === 'POST' && (r = path.match(/^\/routines\/([^/]+)\/(seen|save|dismiss|delete)$/))) return await routineAction(user, r[1], r[2]);
     if (m === 'POST' && path === '/auth/google/link') return await linkGoogle(user, await body());
     if (m === 'POST' && path === '/auth/pin') return await setPin(user, await body());
     if (m === 'POST' && path === '/challenges') return await postChallenge(user, await body());
     if (m === 'POST' && (r = path.match(/^\/challenges\/([^/]+)\/(start|evidence|review|cancel)$/))) return await challengeAction(user, r[1], r[2], req, url, r[2] === 'review' ? await body() : {});
-    if (m === 'GET' && (r = path.match(/^\/challenges\/([^/]+)\/evidence$/))) return await getEvidence(r[1]);
+    if (m === 'GET' && (r = path.match(/^\/challenges\/([^/]+)\/evidence$/))) return await getEvidence(user, r[1]);
     if (m === 'POST' && (r = path.match(/^\/messages\/([^/]+)\/like$/))) return await likeMessage(user, r[1]);
     if (m === 'POST' && (r = path.match(/^\/messages\/([^/]+)\/penalty$/))) return await penalizeMessage(user, r[1], await body());
     if (m === 'POST' && (r = path.match(/^\/messages\/([^/]+)\/delete$/))) return await deleteMessage(user, r[1]);

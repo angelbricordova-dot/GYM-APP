@@ -296,7 +296,7 @@ export function recomputeAwards(doc, extra = {}) {
     if (c.status === 'approved' && c.to === doc.id) put(`challenge:${c.id}`, c.points, `Reto cumplido: ${c.title}`, ymd(new Date(c.approvedAt || c.ts)));
   }
 
-  const kept = doc.ledger.filter((e) => !e.key || want.has(e.key));
+  const kept = doc.ledger.filter((e) => !e.key || e.key.startsWith('bank:') || want.has(e.key)); // `bank:` = puntos fijados al desvincularse
   for (const e of kept) { const w = e.key && want.get(e.key); if (w && e.delta !== w.delta) { e.delta = w.delta; e.reason = w.reason; } } // p. ej. la pareja cambió la penalización
   const have = new Set(kept.map((e) => e.key).filter(Boolean));
   for (const w of want.values()) if (!have.has(w.key)) kept.push({ id: uid(), ts: Date.now(), ...w });
