@@ -311,7 +311,7 @@ export function recomputeAwards(doc, extra = {}) {
 }
 
 export const balance = (doc) => doc.ledger.reduce((a, e) => a + e.delta, 0);
-export const ledgerSorted = (doc) => [...doc.ledger].sort((a, b) => b.date.localeCompare(a.date) || b.ts - a.ts);
+export const ledgerSorted = (doc) => doc.ledger.filter((e) => !e.hidden).sort((a, b) => b.date.localeCompare(a.date) || b.ts - a.ts);
 
 // ---------- suplementos ----------
 export const DEFAULT_SUPPS = [

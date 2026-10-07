@@ -197,9 +197,37 @@ function CounterSheet({ p, onClose, onSend, title = 'Contraoferta', text, cta = 
   <//>`;
 }
 
+/** Fila que se desliza hacia un lado para ocultarse (también con el mouse). */
+function SwipeRow({ onDismiss, children }) {
+  const [dx, setDx] = useState(0);
+  const [drag, setDrag] = useState(null);
+  const [gone, setGone] = useState(false);
+  const down = (e) => setDrag({ x: e.clientX, y: e.clientY, moved: false });
+  const move = (e) => {
+    if (!drag) return;
+    const d = e.clientX - drag.x;
+    if (!drag.moved && Math.abs(d) < 8) return;
+    if (!drag.moved) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* sin captura */ } setDrag({ ...drag, moved: true }); }
+    setDx(d);
+  };
+  const up = (e) => {
+    if (!drag) return;
+    const w = e.currentTarget.offsetWidth || 300;
+    setDrag(null);
+    if (Math.abs(dx) > Math.min(110, w * 0.35)) { setDx(dx > 0 ? w : -w); setGone(true); setTimeout(onDismiss, 180); } else setDx(0);
+  };
+  return html`<div class=${cx('swipe', gone && 'gone')}>
+    <div class="swipe-bg"><span>🗑️ Ocultar</span><span>Ocultar 🗑️</span></div>
+    <div class=${cx('swipe-fg', drag?.moved && 'dragging')} style=${`transform:translateX(${dx}px);opacity:${1 - Math.min(Math.abs(dx) / 400, 0.6)}`}
+      onPointerDown=${down} onPointerMove=${move} onPointerUp=${up} onPointerCancel=${up}>${children}</div>
+  </div>`;
+}
+
 function History({ me }) {
   const rows = L.ledgerSorted(me).slice(0, 40);
-  return html`<section class="card rise"><h2>Movimientos</h2>
-    ${rows.length ? rows.map((e) => html`<div class="ledger"><div class="grow"><b>${e.reason}</b><small class="muted">${fmtDay(e.date)}</small></div><b class=${e.delta > 0 ? 'pos' : 'neg'}>${e.delta > 0 ? '+' : ''}${e.delta}</b></div>`) : html`<p class="muted">Todavía no hay movimientos.</p>`}
+  const hide = (ids) => { S.hideLedger(ids); toast(ids ? 'Movimiento oculto (tu saldo no cambia)' : 'Movimientos ocultos (tu saldo no cambia)'); };
+  return html`<section class="card rise"><div class="row-between"><h2>Movimientos</h2>${rows.length > 1 && html`<button class="btn sm ghost" onClick=${() => hide(null)}>Ocultar todo</button>`}</div>
+    ${rows.length ? html`<p class="muted small">Desliza un movimiento para ocultarlo. Tu saldo no cambia.</p>` : null}
+    ${rows.length ? rows.map((e) => html`<${SwipeRow} key=${e.id} onDismiss=${() => hide([e.id])}><div class="ledger"><div class="grow"><b>${e.reason}</b><small class="muted">${fmtDay(e.date)}</small></div><b class=${e.delta > 0 ? 'pos' : 'neg'}>${e.delta > 0 ? '+' : ''}${e.delta}</b></div><//>`) : html`<p class="muted">Todavía no hay movimientos.</p>`}
   </section>`;
 }

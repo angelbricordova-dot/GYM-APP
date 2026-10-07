@@ -496,6 +496,10 @@ export function historyCounts() {
     routines: state.routines.filter((r) => r.status !== 'new').length,
   };
 }
+/** Oculta movimientos de puntos de la lista (no cambia el saldo). Sin ids: oculta todos. */
+export function hideLedger(ids) {
+  update((me) => { const all = !ids; for (const e of me.ledger) if (all || ids.includes(e.id)) e.hidden = true; });
+}
 /** Borra historial compartido (retos terminados, cupones cumplidos e ideas rechazadas, notas, rutinas vistas). Los puntos ya ganados se conservan. */
 export async function clearHistory(kinds) {
   await syncNow(); // primero subo mis cambios para que no se pisen con los puntos que fija el servidor
