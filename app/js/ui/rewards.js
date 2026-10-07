@@ -14,6 +14,7 @@ export function Rewards() {
   const partner = S.state.partner;
   const [tab, setTab] = useState('prizes');
   const [propose, setPropose] = useState(false);
+  const [gift, setGift] = useState(false);
   const pending = S.state.proposals.filter((p) => p.status === 'pending' && p.lastBy !== S.state.auth.uid); // las que esperan en la pestaña Ideas
   const bal = L.balance(me);
   const active = S.state.proposals.filter((p) => p.status === 'accepted').sort((a, b) => a.cost - b.cost);
@@ -29,11 +30,13 @@ export function Rewards() {
       ${next ? html`<div class="next"><div class="meter gold"><i style=${`width:${Math.min(100, ((bal - from) / (next.cost - from)) * 100)}%`}></i></div><small class="muted">Faltan ${next.cost - bal} para ${next.emoji} ${next.name}</small></div>` : html`<small class="muted">${active.length ? '¡Ya te alcanza para todo! Elige uno 🎉' : 'Propongan su primer premio en “Ideas”.'}</small>`}
     </section>
 
+    ${partner && bal > 0 && html`<button class="btn tinted block gift-btn" onClick=${() => setGift(true)}>💝 Regalar puntos a ${partner.name}</button>`}
     <${Segmented} value=${tab} onChange=${setTab} options=${[{ id: 'prizes', label: 'Premios' }, { id: 'ideas', label: 'Ideas', badge: pending.length || null }, { id: 'history', label: 'Historial' }]} />
     ${tab === 'prizes' && html`<${Prizes} active=${active} bal=${bal} me=${me} partner=${partner} onIdeas=${() => setTab('ideas')} />`}
     ${tab === 'ideas' && html`<${Ideas} me=${me} partner=${partner} onPropose=${() => setPropose(true)} />`}
     ${tab === 'history' && html`<${History} me=${me} />`}
     ${propose && html`<${ProposeSheet} onClose=${() => setPropose(false)} />`}
+    ${gift && html`<${GiftSheet} bal=${bal} partner=${partner} onClose=${() => setGift(false)} />`}
   </div>`;
 }
 
@@ -51,6 +54,7 @@ function Prizes({ active, bal, me, partner, onIdeas }) {
   const toFulfill = S.vouchersToFulfill(); // los que mi pareja canjeó y me toca cumplir
   const mineOpen = S.state.vouchers.filter((v) => v.by === uid && ['open', 'claimed'].includes(v.status)).sort((a, b) => (b.status === 'claimed') - (a.status === 'claimed'));
   const act = async (v, action, ok) => { const r = await S.voucherAction(v.id, action); toast(r.ok ? ok : r.data.error, { icon: r.ok ? '✅' : '⚠️' }); };
+  const deny = (v) => { if (confirm(`Si de verdad NO lo hizo, ${partner?.name || 'tu pareja'} pierde ${L.LIE_PENALTY} puntos de amor por decir que sí. El premio sigue pendiente. ¿Confirmas?`)) act(v, 'deny', `Anotado: ${partner?.name || 'tu pareja'} pierde ${L.LIE_PENALTY} puntos y el premio sigue pendiente`); };
   const claim = (v) => { if (confirm(`¿De verdad ya cumpliste “${v.name}”? ${partner?.name || 'Tu pareja'} tendrá que confirmarlo.`)) act(v, 'claim', 'Listo: ahora ' + (partner?.name || 'tu pareja') + ' lo confirma'); };
   const redeem = async (p) => {
     if (!confirm(`¿Canjear “${p.name}” por ${p.cost} puntos de amor?`)) return;
@@ -63,14 +67,16 @@ function Prizes({ active, bal, me, partner, onIdeas }) {
     ${toFulfill.length > 0 && html`<section class="card rise attn"><h2>Premios pendientes por cumplir</h2>
       <p class="muted small">${partner?.name || 'Tu pareja'} los canjeó con sus puntos. Cuando los cumplas, toca “Lo hice”: ${partner?.name || 'tu pareja'} tiene que confirmar que sí fue verdad.</p>
       ${toFulfill.map((v) => html`<div class="fulfil"><div class="reward"><span class="emoji">${v.emoji}</span><div class="grow"><b>${v.name}</b><small class="muted">Canjeado por ${who(v.by, partner)} · ${fmtDay(L.ymd(new Date(v.ts)))}</small></div></div>
+        ${(v.lies || []).length > 0 && v.status === 'open' && html`<p class="lie-note">⚠️ Ya te marcaron ${(v.lies || []).length} ${(v.lies || []).length === 1 ? 'vez' : 'veces'} como que no lo hiciste (−${(v.lies || []).length * L.LIE_PENALTY} puntos). Cúmplelo de verdad antes de tocar “Lo hice”.</p>`}
         ${v.status === 'claimed'
-          ? html`<div class="price-box pending"><span class="pb-ic">⏳</span><div class="grow"><b>Esperando confirmación</b><small>${partner?.name || 'Tu pareja'} tiene que decir que sí lo cumpliste</small></div></div>`
+          ? html`<div class="price-box pending"><span class="pb-ic">⏳</span><div class="grow"><b>Esperando confirmación</b><small>${partner?.name || 'Tu pareja'} tiene que decir que sí lo cumpliste. Si dices que lo hiciste y no es cierto, pierdes ${L.LIE_PENALTY} puntos</small></div></div>`
           : html`<button class="btn primary block" onClick=${() => claim(v)}><${Icon} name="check" size=${18} sw=${2.6} /> Lo hice</button>`}
       </div>`)}</section>`}
     ${mineOpen.length > 0 && html`<section class="card rise"><h2>Mis premios canjeados</h2>${mineOpen.map((v) => html`<div class="fulfil"><div class="reward"><span class="emoji">${v.emoji}</span><div class="grow"><b>${v.name}</b><small class="muted">Canjeado ${fmtDay(L.ymd(new Date(v.ts)))}</small></div></div>
       ${v.status === 'claimed'
         ? html`<div class="price-box ask"><span class="pb-ic">🙋</span><div class="grow"><b>${partner?.name || 'Tu pareja'} dice que ya lo cumplió</b><small>¿Es verdad? Solo tú lo puedes confirmar</small></div></div>
-           <div class="idea-actions"><button class="btn sm primary" onClick=${() => act(v, 'confirm', '¡Premio cumplido! 🎉')}>Sí, me lo cumplió</button><button class="btn sm ghost" onClick=${() => act(v, 'reject', 'Quedó pendiente')}>Todavía no</button></div>`
+           <div class="idea-actions"><button class="btn sm primary" onClick=${() => act(v, 'confirm', '¡Premio cumplido! 🎉')}>Sí, me lo cumplió</button><button class="btn sm ghost" onClick=${() => act(v, 'reject', 'Quedó pendiente')}>Todavía no</button></div>
+           <button class="btn sm bad block" onClick=${() => deny(v)}>✋ No, no lo hizo · −${L.LIE_PENALTY} puntos por mentir</button>`
         : html`<div class="price-box pending"><span class="pb-ic">⏳</span><div class="grow"><b>Esperando que ${partner?.name || 'tu pareja'} lo cumpla</b><small>Cuando lo haga, te pedirá que lo confirmes</small></div><button class="btn sm tinted" onClick=${() => act(v, 'confirm', '¡Premio cumplido! 🎉')}>Ya me lo cumplió</button></div>`}
     </div>`)}</section>`}
     ${S.priceChangesForMe().length > 0 && html`<section class="card rise attn"><h2>Cambio de precio</h2>${S.priceChangesForMe().map((p) => html`<div class="idea">
@@ -129,6 +135,35 @@ function Ideas({ me, partner, onPropose }) {
     ${declined.length > 0 && html`<details class="card"><summary>Rechazadas (${declined.length})</summary>${declined.map((p) => html`<div class="reward dim"><span class="emoji">${p.emoji}</span><div class="grow"><b>${p.name}</b><small class="muted"><${Points} n=${p.cost} size=${13} /></small></div></div>`)}</details>`}
     ${counter && html`<${CounterSheet} p=${counter} onClose=${() => setCounter(null)} onSend=${(c) => { decide(counter, 'counter', c); setCounter(null); }} />`}
   </div>`;
+}
+
+/** Regalar puntos de amor: se restan de mi saldo y se suman al de mi pareja. */
+function GiftSheet({ bal, partner, onClose }) {
+  const [pts, setPts] = useState(String(Math.min(10, bal)));
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const n = Math.round(L.num(pts));
+  const ok = n >= 1 && n <= bal;
+  const send = async (e) => {
+    e.preventDefault();
+    if (!ok || busy) return;
+    setBusy(true);
+    const r = await S.giftPoints(n, note);
+    setBusy(false);
+    if (!r.ok) return toast(r.data.error, { icon: '⚠️' });
+    toast(`Le regalaste ${puntos(n)} de amor a ${partner.name}`, { icon: '💝' });
+    onClose();
+  };
+  return html`<${Sheet} title=${`Regalar puntos a ${partner.name}`} onClose=${onClose}>
+    <p class="muted">Tienes <b>${bal}</b> puntos de amor. Lo que regales se te resta a ti y se le suma a ${partner.name}.</p>
+    <form class="stack" onSubmit=${send}>
+      <${Field} label="¿Cuántos puntos regalas?"><${Stepper} value=${pts} onChange=${(v) => setPts(String(Math.min(bal, L.num(v))))} step=${5} min=${1} label="Puntos a regalar" /><//>
+      <div class="chips">${[5, 10, 25, 50].filter((x) => x < bal).concat([bal]).map((x) => html`<button type="button" class=${cx('chip pick', n === x && 'on')} onClick=${() => setPts(String(x))}>${x === bal ? `Todos (${x})` : x}</button>`)}</div>
+      <${Field} label="Mensaje (opcional)"><input value=${note} onInput=${(e) => setNote(e.target.value)} maxlength="120" placeholder="Para que te compres un helado 🍦" /><//>
+      <p class="muted small center">${ok ? `Te quedarían ${bal - n} puntos de amor.` : n > bal ? `Solo tienes ${bal}.` : 'Elige al menos 1 punto.'}</p>
+      <button class="btn primary block lg" disabled=${!ok || busy}>${busy ? 'Enviando…' : `💝 Regalar ${ok ? puntos(n) : 'puntos'}`}</button>
+    </form>
+  <//>`;
 }
 
 function ProposeSheet({ onClose }) {

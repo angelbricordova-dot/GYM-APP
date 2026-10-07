@@ -341,14 +341,14 @@ async function sync(user, url) {
   const partnerRec = partnerId ? await db.get(`user/${partnerId}`) : null;
   const meAt = Number(url.searchParams.get('meAt')) || 0;
   const partnerAt = Number(url.searchParams.get('partnerAt')) || 0;
-  const [proposals, vouchers, messages, challenges, routines] = await Promise.all([listItems('proposal/', 100, sp), listItems('voucher/', 60, sp), listItems('message/', 60, sp), listItems('challenge/', 80, sp), listItems('routine/', 40, sp)]);
+  const [proposals, vouchers, messages, challenges, routines, gifts] = await Promise.all([listItems('proposal/', 100, sp), listItems('voucher/', 60, sp), listItems('message/', 60, sp), listItems('challenge/', 80, sp), listItems('routine/', 40, sp), listItems('gift/', 30, sp)]);
   return json(200, {
     me: user.doc.updatedAt > meAt ? user.doc : null,
     partner: partnerRec
       ? { id: partnerRec.id, name: partnerRec.name, doc: partnerRec.doc.updatedAt > partnerAt ? publicDoc(partnerRec.doc) : null, updatedAt: partnerRec.doc.updatedAt }
       : null,
     inviteCode: sp && !partnerRec ? sp.inviteCode : null,
-    proposals, vouchers, messages, challenges, routines,
+    proposals, vouchers, messages, challenges, routines, gifts,
     partnerPush: partnerRec ? (partnerRec.push || []).length > 0 : false, // ¿mi pareja puede recibir avisos? (para avisarme si no)
     account: { google: !!user.googleSub, email: user.email || '', hasPin: !!user.hash, push: { devices: (user.push || []).length, prefs: { ...DEFAULT_PREFS, ...user.pushPrefs }, error: user.pushError || null } },
     serverTime: Date.now(),
@@ -486,9 +486,24 @@ async function voucherAction(user, id, action) {
     if (!redeemer) return fail(403, 'Eso lo decide quien canjeó el premio.');
     if (v.status !== 'claimed') return fail(409, 'No hay nada por rechazar.');
     v.status = 'open'; v.rejectedAt = Date.now(); delete v.claimedAt;
+  } else if (action === 'deny') {
+    // “No lo hizo”: dijo que cumplió y no era cierto → vuelve a pendiente y pierde puntos de amor por mentir
+    if (!redeemer) return fail(403, 'Eso lo decide quien canjeó el premio.');
+    if (v.status !== 'claimed') return fail(409, 'No hay nada por rechazar.');
+    const now = Date.now();
+    v.status = 'open'; v.rejectedAt = now; delete v.claimedAt;
+    v.lies = [...(v.lies || []), { ts: now }];
+    const liarId = await partnerOf(user);
+    const liar = liarId && (await db.get(`user/${liarId}`));
+    if (liar) {
+      liar.doc.ledger = liar.doc.ledger || [];
+      liar.doc.ledger.push({ id: randomUUID(), ts: now, key: `bank:lie:${v.id}:${now}`, delta: -L.LIE_PENALTY, reason: `Dijo que cumplió “${String(v.name).slice(0, 40)}” y no era cierto`, date: new Date(now).toISOString().slice(0, 10) });
+      liar.doc.updatedAt = Math.max(now, (liar.doc.updatedAt || 0) + 1);
+      await db.set(`user/${liar.id}`, liar);
+    }
   } else return fail(404, 'Ruta no encontrada.');
   await db.set(key, v);
-  const note = { claim: { title: `${first(user.name)} dice que ya cumplió ${v.emoji} ${v.name}`, body: 'Confirma si es verdad' }, confirm: { title: `${first(user.name)} confirmó: ${v.emoji} ${v.name} cumplido ✅`, body: '¡Gracias!' }, reject: { title: `${first(user.name)} dice que ${v.emoji} ${v.name} todavía no se cumplió`, body: 'Quedó pendiente' } }[action];
+  const note = { claim: { title: `${first(user.name)} dice que ya cumplió ${v.emoji} ${v.name}`, body: 'Confirma si es verdad' }, confirm: { title: `${first(user.name)} confirmó: ${v.emoji} ${v.name} cumplido ✅`, body: '¡Gracias!' }, reject: { title: `${first(user.name)} dice que ${v.emoji} ${v.name} todavía no se cumplió`, body: 'Quedó pendiente' }, deny: { title: `${first(user.name)} dice que NO hiciste ${v.emoji} ${v.name}`, body: `Te restó ${L.LIE_PENALTY} puntos de amor por decir que sí. Sigue pendiente` } }[action];
   await tell(user, { type: 'prizes', ...note, url: '/?tab=rewards' });
   return json(200, { voucher: v });
 }
@@ -704,7 +719,7 @@ async function deleteMe(user) {
     const c = await db.get(k);
     if (c && (c.from === user.id || c.to === user.id)) { await db.del(`evidence/${c.id}`); await db.del(k); }
   }
-  for (const [prefix, who] of [['message/', 'from'], ['routine/', 'from'], ['voucher/', 'by'], ['proposal/', 'by']]) {
+  for (const [prefix, who] of [['message/', 'from'], ['routine/', 'from'], ['voucher/', 'by'], ['proposal/', 'by'], ['gift/', 'from']]) {
     for (const k of await db.list(prefix)) { const x = await db.get(k); if (x && (x[who] === user.id || x.to === user.id)) await db.del(k); }
   }
   await db.del(`user/${user.id}`);
@@ -721,7 +736,7 @@ async function deleteMe(user) {
 }
 
 // ---------- desvincularse y unirse a otra persona ----------
-const SHARED = ['message/', 'proposal/', 'voucher/', 'challenge/', 'routine/'];
+const SHARED = ['message/', 'proposal/', 'voucher/', 'challenge/', 'routine/', 'gift/'];
 
 /**
  * Fija como “banco” los puntos de amor ya ganados con retos de la pareja y las penalizaciones decididas,
@@ -811,6 +826,36 @@ async function clearHistory(user, body) {
   return json(200, { ok: true, deleted: Object.fromEntries(Object.entries(del).map(([k, v]) => [k, v.length])) });
 }
 
+/**
+ * Regalar puntos de amor: se restan a quien regala y se suman a su pareja. El servidor escribe los dos documentos
+ * (las entradas llevan clave `bank:`, que no se recalcula) y deja un registro del regalo para avisar y mostrarlo.
+ */
+async function sendGift(user, body) {
+  const sp = await mySpace(user);
+  const toId = sp?.users.find((id) => id !== user.id);
+  if (!toId) return fail(409, 'Tu pareja aún no se une.');
+  const points = Math.round(Number(body.points));
+  if (!(points >= 1 && points <= 9999)) return fail(400, 'Elige cuántos puntos regalar (de 1 a 9999).');
+  const me = await db.get(`user/${user.id}`);
+  const to = await db.get(`user/${toId}`);
+  if (!to) return fail(404, 'No encuentro a tu pareja.');
+  const have = L.balance(me.doc);
+  if (points > have) return fail(409, have > 0 ? `Solo tienes ${have} puntos de amor.` : 'No tienes puntos de amor para regalar.');
+  const id = randomUUID();
+  const now = Date.now();
+  const note = clean(body.note, 120);
+  const date = new Date(now).toISOString().slice(0, 10);
+  const entry = (doc, delta, reason) => { doc.ledger = doc.ledger || []; doc.ledger.push({ id: randomUUID(), ts: now, key: `bank:gift:${id}`, delta, reason, date }); doc.updatedAt = Math.max(now, (doc.updatedAt || 0) + 1); };
+  entry(me.doc, -points, `Regalo para ${first(to.name)}${note ? `: ${note}` : ''}`.slice(0, 80));
+  entry(to.doc, points, `Regalo de ${first(me.name)}${note ? `: ${note}` : ''}`.slice(0, 80));
+  await db.set(`user/${me.id}`, me);
+  await db.set(`user/${to.id}`, to);
+  const gift = { id, space: sp.id, from: me.id, to: to.id, points, note, ts: now };
+  await db.set(`gift/${String(now).padStart(13, '0')}-${id}`, gift);
+  await push.notify(to.id, { type: 'prizes', title: `🎁 ${first(me.name)} te regaló ${points} ${points === 1 ? 'punto' : 'puntos'} de amor`, body: note || '¡Úsalos como quieras!', url: '/?tab=rewards' });
+  return json(200, { gift, balance: L.balance(me.doc) });
+}
+
 /** Ya con cuenta y sin pareja: unirse al espacio de otra persona con su código (y la frase de aceptación). */
 async function joinOther(user, body) {
   const meta = await getMeta();
@@ -883,13 +928,14 @@ export default async function handler(req) {
     if (m === 'POST' && path === '/proposals') return await postProposal(user, await body());
     if (m === 'POST' && (r = path.match(/^\/proposals\/([^/]+)$/))) return await decideProposal(user, r[1], await body());
     if (m === 'POST' && path === '/vouchers') return await postVoucher(user, await body());
-    if (m === 'POST' && (r = path.match(/^\/vouchers\/([^/]+)\/(done|claim|confirm|reject)$/))) return await voucherAction(user, r[1], r[2]);
+    if (m === 'POST' && (r = path.match(/^\/vouchers\/([^/]+)\/(done|claim|confirm|reject|deny)$/))) return await voucherAction(user, r[1], r[2]);
     if (m === 'POST' && path === '/messages') return await postMessage(user, await body());
     if (path.startsWith('/push/')) return await pushRoutes(user, path, m === 'POST' ? await body() : {}, m);
     if (m === 'POST' && path === '/me/reset') return await resetMe(user);
     if (m === 'POST' && path === '/me/delete') return await deleteMe(user);
     if (m === 'POST' && path === '/me/leave') return await leaveMe(user);
     if (m === 'POST' && path === '/history/clear') return await clearHistory(user, await body());
+    if (m === 'POST' && path === '/gifts') return await sendGift(user, await body());
     if (m === 'POST' && path === '/me/join') return await joinOther(user, await body());
     if (m === 'POST' && path === '/routines') return await postRoutine(user, await body());
     if (m === 'POST' && (r = path.match(/^\/routines\/([^/]+)\/(seen|save|dismiss|delete)$/))) return await routineAction(user, r[1], r[2]);

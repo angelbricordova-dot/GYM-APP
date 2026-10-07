@@ -9,7 +9,7 @@ const fresh = () => ({
   auth: null, // { token, uid }
   me: null,
   partner: null, // { id, name, doc, updatedAt }
-  proposals: [], vouchers: [], messages: [], challenges: [], routines: [],
+  proposals: [], vouchers: [], messages: [], challenges: [], routines: [], gifts: [],
   account: null, // { google, email, hasPin }
   invite: null,
   pendingInvite: null, // código que llegó por enlace (?join=CODIGO) antes de tener cuenta
@@ -85,9 +85,13 @@ function incoming(prev, cur, name, first) {
     else if (old && old.status !== v.status) {
       if (v.by === me && v.status === 'claimed') out.push({ icon: '🙋', title: `${name} dice que ya cumplió tu premio`, body: `${v.emoji} ${v.name}: confirma si es verdad`, tab: 'rewards' });
       if (v.by !== me && v.status === 'done') out.push({ icon: '✅', title: `${name} confirmó tu premio`, body: `${v.emoji} ${v.name} cumplido`, tab: 'rewards' });
-      if (v.by !== me && old.status === 'claimed' && v.status === 'open') out.push({ icon: '↩️', title: `${name} dice que todavía no se cumplió`, body: `${v.emoji} ${v.name}`, tab: 'rewards' });
+      if (v.by !== me && old.status === 'claimed' && v.status === 'open') {
+        const lied = (v.lies || []).length > (old.lies || []).length;
+        out.push(lied ? { icon: '✋', title: `${name} dice que NO lo hiciste: −${L.LIE_PENALTY} puntos`, body: `${v.emoji} ${v.name} sigue pendiente`, tab: 'rewards' } : { icon: '↩️', title: `${name} dice que todavía no se cumplió`, body: `${v.emoji} ${v.name}`, tab: 'rewards' });
+      }
     }
   }
+  for (const g of cur.gifts || []) if (!(prev.gifts || []).some((x) => x.id === g.id) && g.to === me && fresh(g.ts)) out.push({ icon: '🎁', title: `${name} te regaló ${g.points} ${g.points === 1 ? 'punto' : 'puntos'} de amor`, body: g.note || '¡Úsalos como quieras!', tab: 'rewards' });
   for (const r of cur.routines) if (!pr.has(r.id) && r.to === me && fresh(r.ts)) out.push({ icon: '🏋️', title: `${name} te recomendó una rutina`, body: r.name, tab: 'together' });
   const today = L.ymd();
   if (!first && !prev.partnerDoc?.checkins?.[today] && cur.partner?.doc?.checkins?.[today]) out.push({ icon: '🔥', title: `${name} ya entrenó`, body: 'Mándale ánimo', tab: 'together' });
@@ -195,12 +199,12 @@ export async function syncNow() {
     const res = await call('GET', q);
     if (res.ok) {
       const d = res.data;
-      const prev = { messages: state.messages, challenges: state.challenges, proposals: state.proposals, routines: state.routines, vouchers: state.vouchers, partnerDoc: state.partner?.doc };
+      const prev = { gifts: state.gifts, messages: state.messages, challenges: state.challenges, proposals: state.proposals, routines: state.routines, vouchers: state.vouchers, partnerDoc: state.partner?.doc };
       if (d.me && !state.dirty) { state.me = d.me; state.meSyncedAt = d.me.updatedAt; }
       state.partner = d.partner ? { id: d.partner.id, name: d.partner.name, updatedAt: d.partner.updatedAt, doc: d.partner.doc || state.partner?.doc || null, push: !!d.partnerPush } : null;
       state.invite = d.inviteCode;
       if (d.partner && state.pendingInvite) state.pendingInvite = null; // un enlace de invitación ya no aplica si tengo pareja
-      state.proposals = d.proposals; state.vouchers = d.vouchers; state.messages = d.messages; state.challenges = d.challenges || []; state.routines = d.routines || [];
+      state.proposals = d.proposals; state.vouchers = d.vouchers; state.messages = d.messages; state.challenges = d.challenges || []; state.routines = d.routines || []; state.gifts = d.gifts || [];
       state.account = d.account || null;
       reconcilePoints();
       if (notifier && state.partner) {
@@ -475,6 +479,14 @@ export async function resetProgress() {
   return res;
 }
 
+/** Regalar puntos de amor a mi pareja (se me restan a mí). */
+export async function giftPoints(points, note = '') {
+  await syncNow(); // primero subo mis cambios: el servidor escribe mi saldo y no debe pisar nada pendiente
+  const res = await call('POST', '/gifts', { points, note });
+  if (res.ok) await syncNow();
+  return res;
+}
+
 /** Cuánto historial hay para borrar (lo que muestra la hoja de “Borrar historial”). */
 export function historyCounts() {
   return {
@@ -496,7 +508,7 @@ export async function clearHistory(kinds) {
 export async function leavePartner() {
   await syncNow(); // primero subo mis cambios para que no se pisen
   const res = await call('POST', '/me/leave');
-  if (res.ok) { state.partner = null; state.messages = []; state.challenges = []; state.proposals = []; state.vouchers = []; state.routines = []; state.invite = res.data.inviteCode; commit(); await syncNow(); }
+  if (res.ok) { state.partner = null; state.messages = []; state.challenges = []; state.proposals = []; state.vouchers = []; state.routines = []; state.gifts = []; state.invite = res.data.inviteCode; commit(); await syncNow(); }
   return res;
 }
 /** Ya con cuenta y sin pareja: unirme al espacio de otra persona con su código. */

@@ -94,7 +94,15 @@ test('propuestas: proponer, contraoferta y aceptar solo la otra persona', async 
   assert.equal((await act(A, 'reject')).status, 403);
   assert.equal((await act(A, 'claim')).data.voucher.status, 'claimed'); // “lo hice”
   assert.equal((await act(A, 'claim')).status, 409);
+  assert.equal((await act(A, 'deny')).status, 403); // solo quien canjeó lo puede negar
   assert.equal((await act(B, 'reject')).data.voucher.status, 'open'); // “todavía no”
+  assert.equal((await act(B, 'deny')).status, 409); // no hay nada reclamado
+  await act(A, 'claim');
+  const balA = async () => (await call('GET', '/sync', { token: A.token })).data.me.ledger.reduce((s, e) => s + e.delta, 0);
+  const before = await balA();
+  const denied = await act(B, 'deny'); // “no, no lo hizo”: A mintió
+  assert.deepEqual([denied.data.voucher.status, denied.data.voucher.lies.length], ['open', 1]);
+  assert.equal(await balA(), before - 5); // −5 por mentir
   assert.equal((await act(A, 'claim')).data.voucher.status, 'claimed');
   assert.equal((await call('POST', `/vouchers/${v.id}/done`, { token: A.token })).status, 409); // la ruta vieja tampoco deja que A lo cierre
   assert.equal((await act(B, 'confirm')).data.voucher.status, 'done'); // sí fue verdad

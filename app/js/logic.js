@@ -41,6 +41,7 @@ export const pactOk = (s) => normalizePhrase(s) === normalizePhrase(PACT_PHRASE)
 // ---------- constantes de juego ----------
 export const EARN = { checkin: 10, pr: 5, week: 20 };
 export const PENALTY = { min: 1, max: 100 }; // puntos que la pareja puede quitar por un “hoy no fui” (también puede decidir 0: no quitar nada)
+export const LIE_PENALTY = 5; // puntos que pierde quien dijo “lo hice” y su pareja confirma que NO lo hizo
 export const SUPP_PENALTY = 5; // puntos que resta cada día sin tomar creatina o proteína (si la persona activó esa opción)
 export const ESSENTIAL_SUPPS = ['creatina', 'proteina'];
 export const MILESTONES = { 3: 10, 7: 25, 14: 40, 30: 100, 60: 150, 100: 250 };

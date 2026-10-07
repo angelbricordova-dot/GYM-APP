@@ -112,3 +112,26 @@ test('estrella (favorito) en notas: cada quien marca las suyas y las favoritas n
   assert.deepEqual(left.map((m) => m.id), [hola.id]); // solo la favorita
   assert.deepEqual((await call('POST', `/messages/${hola.id}/star`, { token: B.token })).data.message.starred, []); // alterna
 });
+
+test('regalar puntos: se restan a quien regala y se suman a su pareja (sin pasarse de lo que tiene)', async () => {
+  const me = (await sync(B)).me;
+  const before = me.ledger.reduce((a, e) => a + e.delta, 0);
+  me.ledger.push({ id: 'seed', ts: 1, key: 'bank:seed', delta: 100 - before, reason: 'prueba', date: '2026-10-01' }); me.updatedAt += 1;
+  await call('PUT', '/me', { token: B.token, body: { doc: me } });
+  const bal = async (u) => (await sync(u)).me.ledger.reduce((a, e) => a + e.delta, 0);
+  const a0 = await bal(A);
+  assert.equal(await bal(B), 100);
+  assert.equal((await call('POST', '/gifts', { token: B.token, body: { points: 0 } })).status, 400);
+  assert.equal((await call('POST', '/gifts', { token: B.token, body: { points: 101 } })).status, 409); // más de lo que tiene
+  const g = await call('POST', '/gifts', { token: B.token, body: { points: 30, note: 'para un helado' } });
+  assert.equal(g.status, 200); assert.equal(g.data.balance, 70);
+  assert.equal(await bal(B), 70); assert.equal(await bal(A), a0 + 30);
+  const entryB = (await sync(B)).me.ledger.find((e) => e.key?.startsWith('bank:gift:'));
+  assert.match(entryB.reason, /Regalo para Ángel: para un helado/);
+  assert.equal((await sync(A)).gifts[0].points, 30);
+  // sin deuda ni pareja: A no puede regalar más de lo que tiene
+  assert.equal((await call('POST', '/gifts', { token: A.token, body: { points: a0 + 31 } })).status, 409);
+  // los puntos regalados se conservan al borrar el historial
+  await call('POST', '/history/clear', { token: A.token, body: { kinds: ['challenges', 'notes'] } });
+  assert.equal(await bal(A), a0 + 30);
+});
