@@ -1,7 +1,7 @@
-import { html, useState } from '../../vendor/preact-htm.js';
+import { html, useState, useEffect } from '../../vendor/preact-htm.js';
 import * as S from '../store.js';
 import * as L from '../logic.js';
-import { Icon, Flame, Photo, Sheet, fmtLong, cx, toast, fmtKg } from './kit.js';
+import { Icon, Flame, Photo, Sheet, SaveButton, fmtLong, cx, toast, fmtKg } from './kit.js';
 
 /** Calendario mensual de check-ins. Sirve para mi perfil y, en solo lectura, para el de mi pareja. */
 export function Calendar({ doc, onDay, month, onMonth, hideHead }) {
@@ -46,6 +46,8 @@ export function DaySheet({ doc, date, isMe, onClose }) {
   const sessions = doc.sessions.filter((s) => s.date === date);
   const reactions = S.state.messages.filter((m) => m.kind === 'reaction' && m.ref?.uid === doc.id && m.ref?.date === date);
   const [sent, setSent] = useState([]);
+  const [photoUrl, setPhotoUrl] = useState(null);
+  useEffect(() => { let live = true; if (ck?.photo) S.loadPhoto(doc.id, ck.photo).then((u) => live && setPhotoUrl(u)).catch(() => {}); return () => { live = false; }; }, [doc.id, ck?.photo]);
   if (!ck) return null;
 
   const react = async (emoji) => {
@@ -58,6 +60,7 @@ export function DaySheet({ doc, date, isMe, onClose }) {
     ${ck.photo
       ? html`<${Photo} uid=${doc.id} pid=${ck.photo} class="day-photo" alt="Foto del espejo" />`
       : html`<div class="day-photo none"><${Icon} name="camera" size=${28} /><span>Sin foto</span></div>`}
+    ${ck.photo && html`<${SaveButton} url=${photoUrl} name=${`lindwyrm-${(isMe ? S.state.me.name : S.state.partner?.name || 'foto').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${date}`} />`}
     <div class="row-between"><b>${ck.time} h</b>${isMe && ck.photo && !ck.photoUp && html`<span class="chip warn">Subiendo cuando haya señal</span>`}</div>
     ${sessions.map((s) => html`<div class="mini-session">
       ${s.exercises.map((ex) => html`<div class="ex-line"><span>${ex.name}</span><small>${ex.sets.map((x) => `${x.reps}×${x.kg ? fmtKg(x.kg).replace(' kg', '') : 'PC'}`).join(' · ')}</small></div>`)}

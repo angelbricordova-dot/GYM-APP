@@ -121,11 +121,15 @@ test('“hoy no voy”: la nota llega a la pareja como tipo skip y el documento 
   assert.equal(r.data.message.ref.uid, A.uid); // la fecha es suya, el uid no se falsifica
   const id = r.data.message.id;
   assert.equal((await call('POST', `/messages/${id}/penalty`, { token: A.token, body: { points: 10 } })).status, 403); // lo decide la pareja
-  assert.equal((await call('POST', `/messages/${id}/penalty`, { token: B.token, body: { points: 0 } })).status, 400);
+  assert.equal((await call('POST', `/messages/${id}/penalty`, { token: B.token, body: { points: -1 } })).status, 400);
   assert.equal((await call('POST', `/messages/${id}/penalty`, { token: B.token, body: { points: 101 } })).status, 400);
   const dec = await call('POST', `/messages/${id}/penalty`, { token: B.token, body: { points: 15 } });
   assert.equal(dec.data.message.penalty.points, 15);
   assert.equal((await call('POST', `/messages/${id}/penalty`, { token: B.token, body: { points: 20 } })).status, 409); // una sola vez
+  // “no quitar ningún punto”: 0 es una decisión válida
+  const sk2 = (await call('POST', '/messages', { token: A.token, body: { text: 'estaba enfermo', kind: 'skip', ref: { date: '2026-01-02' } } })).data.message;
+  const forgiven = await call('POST', `/messages/${sk2.id}/penalty`, { token: B.token, body: { points: 0 } });
+  assert.equal(forgiven.status, 200); assert.equal(forgiven.data.message.penalty.points, 0);
   assert.equal((await call('GET', '/sync', { token: A.token })).data.messages.find((x) => x.id === id).penalty.points, 15);
   const seen = (await call('GET', '/sync', { token: B.token })).data.messages.find((x) => x.id === r.data.message.id);
   assert.equal(seen.kind, 'skip');

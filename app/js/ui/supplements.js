@@ -28,6 +28,7 @@ export function SuppPanel() {
         </button>`)}
       </div>
       <${Week} doc=${me} />
+      <${PenaltyOption} me=${me} />
     </section>
 
     ${partner && html`<section class="card rise" style="--i:1">
@@ -40,6 +41,17 @@ export function SuppPanel() {
         <${Week} doc=${pd} />`}
     </section>`}
     ${sheet && html`<${AddSupp} me=${me} onClose=${() => setSheet(false)} />`}
+  </div>`;
+}
+
+function PenaltyOption({ me }) {
+  const on = !!me.suppPenaltySince;
+  const missed = L.suppMissedDays(me);
+  const essentials = L.suppList(me).filter((x) => L.ESSENTIAL_SUPPS.includes(x.id));
+  if (!essentials.length) return null;
+  return html`<div class="supp-pen">
+    <label class="check"><input type="checkbox" checked=${on} onChange=${(e) => S.setSuppPenalty(e.target.checked)} /><span><b>Restar ${L.SUPP_PENALTY} puntos de amor por cada día que pase</b> sin tomar ${essentials.map((x) => x.name.toLowerCase()).join(' o ')}</span></label>
+    ${on && html`<small class="muted">${missed.length ? `Llevas ${missed.length} ${missed.length === 1 ? 'día' : 'días'} sin completarlas: −${missed.length * L.SUPP_PENALTY} puntos. Hoy aún puedes tomarlas.` : 'Al día: no pierdes nada. El día de hoy cuenta hasta que termine.'}</small>`}
   </div>`;
 }
 

@@ -1,8 +1,8 @@
 import { html, useState, useEffect, useRef } from '../../vendor/preact-htm.js';
 import * as S from '../store.js';
 import * as L from '../logic.js';
-import { processImage } from '../photos.js';
-import { Icon, Points, Sheet, Stepper, Field, Empty, toast, cx, fmtDay } from './kit.js';
+import { processImage, fixWebmDuration } from '../photos.js';
+import { Icon, Points, Sheet, Stepper, Field, Empty, Segmented, SaveButton, toast, cx, fmtDay } from './kit.js';
 
 const IDEAS = ['10 flexiones', '20 sentadillas', 'Plancha 1 minuto', '30 abdominales', '15 min de caminata', '10 min de estiramiento'];
 const MAX_MB = 5;
@@ -51,47 +51,80 @@ export function ChallengeCard({ c, compact }) {
       <${Points} n=${c.points} class=${cx(c.status === 'approved' && 'won')} />
     </div>
     ${action}
+    ${c.evidence && !c.evidence.removed && !(c.status === 'submitted' && !mine) && ['submitted', 'approved'].includes(c.status) && html`<button class="btn tinted sm ch-view" onClick=${() => setSheet('view')}><${Icon} name="eye" size=${16} /> Ver evidencia</button>`}
+    ${sheet === 'view' && html`<${ReviewSheet} c=${c} viewOnly onClose=${() => setSheet(null)} />`}
     ${sheet === 'record' && html`<${EvidenceSheet} c=${c} onClose=${() => setSheet(null)} />`}
     ${sheet === 'review' && html`<${ReviewSheet} c=${c} onClose=${() => setSheet(null)} />`}
   </article>`;
 }
 
 // ============ grabar o elegir evidencia ============
-const REC_TYPES = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp8', 'video/webm'];
+// Dos formas de demostrarlo: video (con audio) o foto. Antes de enviar se puede ver y repetir.
+// Safari graba MP4 (con audio AAC). Chrome/Android: WebM con audio Opus (su MP4 sale sin duración y no se puede ver bien antes de enviar).
+const SAFARI = /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);
+const REC_TYPES = SAFARI
+  ? ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm']
+  : ['video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4'];
+
+/** Los videos grabados con MediaRecorder (WebM) llegan sin duración: este truco hace que el reproductor la calcule y se pueda ver y adelantar. */
+function fixDuration(v) {
+  if (!v || v.duration !== Infinity) return;
+  const play = v.autoplay || !v.paused;
+  v.pause();
+  v.addEventListener('seeked', () => { v.currentTime = 0; if (play) v.play().catch(() => {}); }, { once: true });
+  v.currentTime = 1e7;
+}
 
 function EvidenceSheet({ c, onClose }) {
   const live = useRef();
-  const review = useRef();
+  const preview = useRef();
   const stream = useRef(null);
   const rec = useRef(null);
   const chunks = useRef([]);
   const timer = useRef(null);
   const file = useRef();
+  const [mode, setMode] = useState('video'); // video | photo
   const [facing, setFacing] = useState('user');
   const [phase, setPhase] = useState('idle'); // idle | count | rec | done
   const [count, setCount] = useState(3);
   const [secs, setSecs] = useState(0);
   const [blob, setBlob] = useState(null);
   const [url, setUrl] = useState(null);
+  const [audio, setAudio] = useState(true); // ¿la cámara abierta trae micrófono?
+  const [hadAudio, setHadAudio] = useState(false); // ¿el video grabado lleva audio?
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const canRecord = typeof MediaRecorder !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
+  const canCamera = !!navigator.mediaDevices?.getUserMedia;
 
   const stopCamera = () => { stream.current?.getTracks().forEach((t) => t.stop()); stream.current = null; };
   useEffect(() => () => { stopCamera(); clearInterval(timer.current); }, []);
   useEffect(() => () => url && URL.revokeObjectURL(url), [url]);
 
+  // Cámara en vivo. En modo video pide también el micrófono; si no lo dan, sigue solo con video y lo avisa.
   useEffect(() => {
-    if (!canRecord || blob) return;
+    if (!canCamera || blob) return;
     let off = false;
     stopCamera();
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false })
-      .then((s) => { if (off) { s.getTracks().forEach((t) => t.stop()); return; } stream.current = s; if (live.current) { live.current.srcObject = s; live.current.play().catch(() => {}); } })
-      .catch(() => setErr('No pude abrir la cámara. Revisa el permiso del navegador o elige un archivo.'));
+    const video = { facingMode: facing, width: { ideal: mode === 'photo' ? 1280 : 640 }, height: { ideal: mode === 'photo' ? 960 : 480 } };
+    const open = async () => {
+      let s;
+      if (mode === 'video' && canRecord) {
+        try { s = await navigator.mediaDevices.getUserMedia({ video, audio: { echoCancellation: true, noiseSuppression: true } }); setAudio(true); }
+        catch { s = await navigator.mediaDevices.getUserMedia({ video, audio: false }); setAudio(false); }
+      } else s = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+      if (off) { s.getTracks().forEach((t) => t.stop()); return; }
+      stream.current = s;
+      if (live.current) { live.current.srcObject = s; live.current.play().catch(() => {}); }
+    };
+    open().catch(() => setErr('No pude abrir la cámara. Revisa el permiso del navegador o elige un archivo del carrete.'));
     return () => { off = true; };
-  }, [facing, blob, canRecord]);
+  }, [facing, blob, canCamera, mode]);
 
-  const finish = (b) => { clearInterval(timer.current); stopCamera(); setBlob(b); setUrl(URL.createObjectURL(b)); setPhase('done'); };
+  const finish = (b, withAudio = false) => {
+    clearInterval(timer.current); stopCamera(); setHadAudio(withAudio);
+    setBlob(b); setUrl(URL.createObjectURL(b)); setPhase('done');
+  };
 
   const startRec = () => {
     if (!stream.current) return;
@@ -103,17 +136,29 @@ function EvidenceSheet({ c, onClose }) {
       clearInterval(timer.current);
       const mimeType = REC_TYPES.find((t) => MediaRecorder.isTypeSupported?.(t)) || '';
       chunks.current = [];
-      const r = new MediaRecorder(stream.current, { ...(mimeType && { mimeType }), videoBitsPerSecond: 1_000_000 });
+      const withAudio = stream.current.getAudioTracks().length > 0;
+      const r = new MediaRecorder(stream.current, { ...(mimeType && { mimeType }), videoBitsPerSecond: 900_000, audioBitsPerSecond: 48_000 });
       rec.current = r;
       r.ondataavailable = (e) => e.data.size && chunks.current.push(e.data);
-      r.onstop = () => finish(new Blob(chunks.current, { type: (r.mimeType || mimeType || 'video/webm').split(';')[0] }));
+      const t0 = Date.now();
+      r.onstop = async () => finish(await fixWebmDuration(new Blob(chunks.current, { type: (r.mimeType || mimeType || 'video/webm').split(';')[0] }), Date.now() - t0), withAudio);
       r.start(250);
       setPhase('rec'); setSecs(0);
-      const t0 = Date.now();
       timer.current = setInterval(() => { const s = Math.floor((Date.now() - t0) / 1000); setSecs(s); if (s >= 20) stopRec(); }, 250);
     }, 1000);
   };
   const stopRec = () => { clearInterval(timer.current); if (rec.current?.state === 'recording') rec.current.stop(); };
+
+  /** Tomar la foto con la cámara en vivo (sin espejo: sale como se ve para los demás). */
+  const snap = () => {
+    const v = live.current;
+    if (!v?.videoWidth) return;
+    const k = Math.min(1, 1080 / Math.max(v.videoWidth, v.videoHeight));
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(v.videoWidth * k); cv.height = Math.round(v.videoHeight * k);
+    cv.getContext('2d').drawImage(v, 0, 0, cv.width, cv.height);
+    cv.toBlob((b) => b && finish(b), 'image/jpeg', 0.85);
+  };
 
   const pick = async (e) => {
     const f = e.target.files[0];
@@ -123,7 +168,7 @@ function EvidenceSheet({ c, onClose }) {
     try {
       if (f.type.startsWith('image/')) finish(await processImage(f, { max: 1080, quality: 0.8 }));
       else if (f.size > MAX_MB * 1e6) setErr(`Ese video pesa ${(f.size / 1e6).toFixed(1)} MB (máximo ${MAX_MB}). Grábalo aquí en la app, que lo comprime.`);
-      else finish(f);
+      else finish(f, true);
     } catch { setErr('No pude leer ese archivo.'); }
   };
 
@@ -136,30 +181,39 @@ function EvidenceSheet({ c, onClose }) {
   };
 
   const isVideo = blob?.type.startsWith('video');
+  const noCam = !canCamera || err.startsWith('No pude abrir');
   return html`<${Sheet} title="Tu evidencia" full onClose=${onClose}>
-    <p class="muted"><b>${c.title}</b> · ${(c.points)} puntos de amor. Grábate haciéndolo (hasta 20 s) o sube una foto.</p>
+    <p class="muted"><b>${c.title}</b> · ${c.points} puntos de amor. Demuéstralo con un video o con una foto.</p>
+    ${phase === 'idle' && html`<${Segmented} value=${mode} onChange=${(m) => { setMode(m); setErr(''); }} options=${[{ id: 'video', label: '🎥 Video' }, { id: 'photo', label: '📷 Foto' }]} />`}
     <div class=${cx('cam', phase)}>
       ${phase === 'done'
-        ? (isVideo ? html`<video ref=${review} src=${url} controls playsinline muted></video>` : html`<img src=${url} alt="Tu evidencia" />`)
-        : canRecord && !err.startsWith('No pude abrir') ? html`<video ref=${live} playsinline muted autoplay class=${facing === 'user' ? 'mirror' : ''}></video>` : html`<div class="cam-off"><${Icon} name="camera" size=${34} /><span>Cámara no disponible</span></div>`}
+        ? (isVideo
+          ? html`<video key="preview" ref=${preview} src=${url} controls playsinline autoplay loop onLoadedMetadata=${(e) => fixDuration(e.target)}></video>`
+          : html`<img src=${url} alt="Tu evidencia" />`)
+        : !noCam && (mode === 'photo' || canRecord) ? html`<video key="live" ref=${live} playsinline muted autoplay class=${facing === 'user' ? 'mirror' : ''}></video>` : html`<div class="cam-off"><${Icon} name="camera" size=${34} /><span>Cámara no disponible</span></div>`}
       ${phase === 'count' && html`<div class="countdown" key=${count}>${count}</div>`}
       ${phase === 'rec' && html`<div class="rec-badge"><i></i>${secs}s</div>`}
+      ${phase === 'done' && isVideo && html`<span class=${cx('audio-chip', hadAudio ? 'on' : 'off')}><${Icon} name="mic" size=${14} /> ${hadAudio ? 'Con audio' : 'Sin audio'}</span>`}
     </div>
+    ${mode === 'video' && phase !== 'done' && !audio && !noCam && html`<p class="notice">No tengo permiso del micrófono: el video saldría <b>sin audio</b>. Permite el micrófono para este sitio (iPhone: Ajustes → Safari → Micrófono) y vuelve a abrir esta pantalla.</p>`}
     ${err && html`<p class="notice" role="alert">${err}</p>`}
     ${phase === 'done'
-      ? html`<button class="btn primary block lg" disabled=${busy} onClick=${send}>${busy ? 'Enviando…' : 'Enviar evidencia'}</button><button class="btn tinted block" onClick=${retry} disabled=${busy}>Repetir</button>`
+      ? html`<p class="muted small center">${isVideo ? 'Míralo antes de enviarlo.' : 'Así se va a ver.'}</p>
+          <button class="btn primary block lg" disabled=${busy} onClick=${send}>${busy ? 'Enviando…' : 'Enviar evidencia'}</button>
+          <button class="btn tinted block" onClick=${retry} disabled=${busy}>Repetir</button>`
       : html`<div class="rec-row">
-          ${canRecord && phase === 'idle' && html`<button class="icon-btn lg" onClick=${() => setFacing(facing === 'user' ? 'environment' : 'user')} aria-label="Girar cámara"><${Icon} name="repeat" size=${20} /></button>`}
-          ${canRecord && html`<button class=${cx('rec-btn', phase === 'rec' && 'on')} onClick=${phase === 'rec' ? stopRec : startRec} disabled=${phase === 'count'} aria-label=${phase === 'rec' ? 'Detener grabación' : 'Grabar'}><i></i></button>`}
+          ${!noCam && phase === 'idle' && html`<button class="icon-btn lg" onClick=${() => setFacing(facing === 'user' ? 'environment' : 'user')} aria-label="Girar cámara"><${Icon} name="repeat" size=${20} /></button>`}
+          ${!noCam && mode === 'video' && canRecord && html`<button class=${cx('rec-btn', phase === 'rec' && 'on')} onClick=${phase === 'rec' ? stopRec : startRec} disabled=${phase === 'count'} aria-label=${phase === 'rec' ? 'Detener grabación' : 'Grabar'}><i></i></button>`}
+          ${!noCam && mode === 'photo' && html`<button class="rec-btn shutter" onClick=${snap} aria-label="Tomar foto"><i></i></button>`}
           <button class="icon-btn lg" onClick=${() => file.current.click()} aria-label="Elegir del carrete"><${Icon} name="image" size=${20} /></button>
         </div>
-        <p class="muted small center">${phase === 'rec' ? 'Grabando… toca el botón para detener' : 'Toca el círculo para grabar (cuenta de 3). A la derecha, elige una foto o video del carrete.'}</p>`}
-    <input ref=${file} type="file" accept="image/*,video/*" hidden onChange=${pick} />
+        <p class="muted small center">${phase === 'rec' ? 'Grabando… toca el botón para detener (máx. 20 s)' : mode === 'photo' ? 'Toca el círculo para tomar la foto. A la derecha, elige una del carrete.' : 'Toca el círculo para grabar (cuenta de 3). A la derecha, elige un video o foto del carrete.'}</p>`}
+    <input ref=${file} type="file" accept=${mode === 'photo' ? 'image/*' : 'image/*,video/*'} hidden onChange=${pick} />
   <//>`;
 }
 
-// ============ revisar y aprobar ============
-function ReviewSheet({ c, onClose }) {
+// ============ revisar y aprobar / ver evidencia ============
+export function ReviewSheet({ c, onClose, viewOnly }) {
   const [src, setSrc] = useState(null);
   const [asking, setAsking] = useState(false);
   const [note, setNote] = useState('');
@@ -175,11 +229,19 @@ function ReviewSheet({ c, onClose }) {
     onClose();
   };
 
+  const media = html`<div class="cam done">
+      ${!src ? html`<div class="spinner"></div>` : c.evidence?.kind === 'video' ? html`<video src=${src} controls playsinline onLoadedMetadata=${(e) => fixDuration(e.target)}></video>` : html`<img src=${src} alt="Evidencia" />`}
+    </div>
+    <${SaveButton} url=${src} name=${`lindwyrm-reto-${c.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'evidencia'}`} />`;
+
+  if (viewOnly) return html`<${Sheet} title=${c.title} onClose=${onClose}>
+    <p class="muted">Evidencia de ${nameOf(c.to)} · <${Points} n=${c.points} size=${13} /></p>
+    ${media}
+  <//>`;
+
   return html`<${Sheet} title=${c.title} onClose=${onClose}>
     <p class="muted">${nameOf(c.to)} envió su evidencia. Si de verdad lo hizo, apruébalo y recibirá <b>${c.points} puntos de amor</b>.</p>
-    <div class="cam done">
-      ${!src ? html`<div class="spinner"></div>` : c.evidence?.kind === 'video' ? html`<video src=${src} controls playsinline></video>` : html`<img src=${src} alt="Evidencia" />`}
-    </div>
+    ${media}
     ${asking
       ? html`<${Field} label="¿Qué debería mejorar? (opcional)"><input value=${note} onInput=${(e) => setNote(e.target.value)} maxlength="140" placeholder="Ej. No se alcanza a ver completo" /><//>
          <button class="btn primary block" disabled=${busy} onClick=${() => decide('reject')}>Pedir que lo repita</button>

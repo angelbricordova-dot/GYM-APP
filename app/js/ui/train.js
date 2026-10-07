@@ -54,6 +54,16 @@ export function Train() {
 
     ${share && html`<${ShareRoutineSheet} preset=${share} onClose=${() => setShare(null)} />`}
 
+    ${last && html`<section class="card rise last-session" style="--i:3">
+      <div class="row-between"><div><small class="muted">Último entreno</small><b class="ls-when">${fmtDay(last.date)} · ${last.time} h</b></div><small class="muted">${last.durationMin ? `${last.durationMin} min` : ''}</small></div>
+      <div class="ls-ex">${last.exercises.map((e) => html`<div class="ex-line"><span>${e.name}</span><small>${e.sets.map((y) => `${y.reps}×${y.kg || 'PC'}`).join(' · ')}</small></div>`)}</div>
+      <div class="cta-row">
+        <button class="btn tinted sm grow" disabled=${!!draft} onClick=${() => { if (S.beginEdit(last.id)) openScreen('workout'); }}><${Icon} name="pencil" size=${15} /> Editar</button>
+        <button class="btn danger sm grow" onClick=${() => { if (confirm('¿Eliminar tu último entreno? Se revierten sus récords y puntos por récord (el check-in del día se queda).')) S.deleteSession(last.id); }}><${Icon} name="trash" size=${15} /> Eliminar</button>
+      </div>
+      ${draft && html`<small class="muted">Termina o descarta el entreno en curso para poder editar.</small>`}
+    </section>`}
+
     ${recent.length > 0 && html`<section class="rise" style="--i:3">
       <h3 class="sec-h">Recientes</h3>
       <div class="group">${recent.slice(0, 3).map((x) => html`<div class="row static"><span class="lead"><${Icon} name="history" size=${18} /></span><div class="grow"><b>${fmtDay(x.date)}</b><small class="muted">${x.exercises.map((e) => e.name).join(', ')}</small></div><small class="muted">${x.durationMin ? `${x.durationMin} min` : ''}</small></div>`)}</div>

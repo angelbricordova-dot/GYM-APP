@@ -40,7 +40,9 @@ export const pactOk = (s) => normalizePhrase(s) === normalizePhrase(PACT_PHRASE)
 
 // ---------- constantes de juego ----------
 export const EARN = { checkin: 10, pr: 5, week: 20 };
-export const PENALTY = { min: 1, max: 100 }; // puntos que la pareja puede quitar por un “hoy no fui”
+export const PENALTY = { min: 1, max: 100 }; // puntos que la pareja puede quitar por un “hoy no fui” (también puede decidir 0: no quitar nada)
+export const SUPP_PENALTY = 5; // puntos que resta cada día sin tomar creatina o proteína (si la persona activó esa opción)
+export const ESSENTIAL_SUPPS = ['creatina', 'proteina'];
 export const MILESTONES = { 3: 10, 7: 25, 14: 40, 30: 100, 60: 150, 100: 250 };
 // 24 colores para el acento personal (el selector también admite un color libre).
 export const PALETTE = [
@@ -279,6 +281,9 @@ export function recomputeAwards(doc, extra = {}) {
     if (pts >= PENALTY.min && !doc.checkins[d] && !pausedBetween(doc, addDays(d, -1), d)) put(`skip:${d}`, -Math.min(pts, PENALTY.max), `No fui: ${String(sk.reason || '').slice(0, 60)}`, d);
   }
 
+  // Suplementos esenciales: si activó la opción, cada día que pasa sin tomar creatina o proteína resta puntos (el de hoy aún no cuenta).
+  for (const d of suppMissedDays(doc)) put(`supp:${d.date}`, -SUPP_PENALTY, `Faltó ${d.missing.join(' y ')}`.toLowerCase().replace(/^f/, 'F'), d.date);
+
   const best = new Map();
   for (const s of sorted(doc)) {
     for (const ex of s.exercises) {
@@ -325,6 +330,24 @@ export function suppWeek(doc, today = ymd()) {
   });
 }
 export const skipToday = (doc, today = ymd()) => doc.skips?.[today] || null;
+/** Días ya pasados (desde que activó la opción) en que faltó la creatina o la proteína. Hoy no cuenta: aún puede tomárselas. */
+export function suppMissedDays(doc, today = ymd()) {
+  const since = doc.suppPenaltySince;
+  if (!since) return [];
+  const essentials = suppList(doc).filter((x) => ESSENTIAL_SUPPS.includes(x.id));
+  if (!essentials.length) return [];
+  const out = [];
+  const from = since < addDays(today, -60) ? addDays(today, -60) : since;
+  for (let d = from; d < today; d = addDays(d, 1)) {
+    if (pausedBetween(doc, addDays(d, -1), d)) continue;
+    const taken = suppTaken(doc, d);
+    const missing = essentials.filter((x) => !taken.has(x.id)).map((x) => x.name);
+    if (missing.length) out.push({ date: d, missing });
+  }
+  return out;
+}
+/** Si el saldo es negativo, lo que debe. */
+export const debt = (doc) => Math.max(0, -balance(doc));
 
 // ---------- ejercicios comunes (para agregar rápido) ----------
 export const LIBRARY = [
@@ -344,6 +367,24 @@ const daysIn = (y, m) => new Date(y, m + 1, 0).getDate();
 export function monthAttended(doc, y, m) { return Object.keys(doc.checkins).filter((d) => d.startsWith(monthPrefix(y, m))).length; }
 
 /** Cuántos días fuiste, cuántos “debías” según tu meta semanal, y cómo va cada semana. */
+/** Mosaico de constancia: las últimas `weeks` semanas (columnas, de lunes a domingo). */
+export function mosaic(doc, weeks = 12, today = ymd()) {
+  const first = addDays(mondayOf(today), -(weeks - 1) * 7);
+  const withSession = new Set(doc.sessions.map((s) => s.date));
+  return Array.from({ length: weeks }, (_, w) => Array.from({ length: 7 }, (_, i) => {
+    const date = addDays(first, w * 7 + i);
+    const state = date > today ? 'future' : doc.checkins[date] ? (withSession.has(date) ? 'strong' : 'on') : pausedBetween(doc, addDays(date, -1), date) ? 'pause' : 'none';
+    return { date, state, today: date === today };
+  }));
+}
+/** Siguiente hito de racha (3, 7, 14, 30, 60, 100) y el anterior, para el anillo de la racha. */
+export function nextMilestone(current) {
+  const ms = Object.keys(MILESTONES).map(Number).sort((a, b) => a - b);
+  const next = ms.find((m) => m > current) || current || 1;
+  const prev = [0, ...ms].filter((m) => m <= current).at(-1);
+  return { next, prev };
+}
+
 export function monthReport(doc, y, m, today = ymd()) {
   const pre = monthPrefix(y, m);
   const first = `${pre}-01`;

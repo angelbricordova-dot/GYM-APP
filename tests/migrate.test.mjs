@@ -34,6 +34,11 @@ test('datos de antes (un solo espacio, sin `space`) siguen funcionando y se migr
   assert.equal(sa.messages.length, 2); // hola + la aceptación
   assert.equal((await call('GET', '/sync', { token: B.token })).data.messages.length, 2);
   assert.equal((await db.get('meta')).spaces[0].id, 'main');
+  // proponer, contraofertar, aceptar y canjear premios con datos del formato viejo
+  const pr = await call('POST', '/proposals', { token: A.token, body: { name: 'Pizza', emoji: '🍕', cost: 40, note: '' } });
+  assert.equal(pr.status, 200, JSON.stringify(pr.data));
+  assert.equal((await call('POST', `/proposals/${pr.data.proposal.id}`, { token: B.token, body: { action: 'accept' } })).status, 200);
+  assert.equal((await call('POST', '/vouchers', { token: B.token, body: { proposalId: pr.data.proposal.id } })).status, 200);
   // y se puede desvincular normalmente
   assert.equal((await call('POST', '/me/leave', { token: B.token })).status, 200);
   assert.equal((await call('GET', '/sync', { token: A.token })).data.messages.length, 0);

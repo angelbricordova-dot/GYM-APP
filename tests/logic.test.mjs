@@ -159,3 +159,19 @@ test('suplementos: creatina y proteína por defecto, lista propia y semana', () 
   d.supps = [];
   assert.equal(L.suppList(d).length, 0); // quitar todo se respeta
 });
+
+test('suplementos esenciales: −5 por día pasado sin creatina o proteína (si activó la opción), y deuda cuando el saldo es negativo', () => {
+  const d = doc([], { suppPenaltySince: '2026-10-01', suppLog: { '2026-10-01': ['creatina', 'proteina'], '2026-10-02': ['creatina'] } });
+  const miss = L.suppMissedDays(d, '2026-10-05');
+  assert.deepEqual(miss.map((x) => [x.date, x.missing.join('+')]), [['2026-10-02', 'Proteína'], ['2026-10-03', 'Creatina+Proteína'], ['2026-10-04', 'Creatina+Proteína']]); // hoy (5) no cuenta
+  assert.equal(L.suppMissedDays({ ...d, suppPenaltySince: undefined }, '2026-10-05').length, 0); // opción apagada
+  assert.equal(L.suppMissedDays({ ...d, supps: [{ id: 'm', name: 'Multi', emoji: '💊', when: 'daily' }] }, '2026-10-05').length, 0); // sin esenciales en su lista
+  assert.equal(L.suppMissedDays({ ...d, pauses: [{ from: '2026-10-03', to: '2026-10-04' }] }, '2026-10-05').length, 1); // en pausa no resta
+  d.suppPenaltySince = '2026-01-01'; // el pasado muy lejano se limita a 60 días
+  assert.ok(L.suppMissedDays(d, '2026-10-05').length <= 60);
+  const z = doc([], { suppPenaltySince: '2026-10-01', suppLog: {} });
+  L.recomputeAwards(z); // usa la fecha de hoy real: cada día pasado resta 5
+  assert.ok(z.ledger.every((e) => e.delta === -L.SUPP_PENALTY));
+  assert.equal(L.debt(z), -L.balance(z));
+  assert.equal(L.debt(doc(['2026-10-01'])), 0);
+});

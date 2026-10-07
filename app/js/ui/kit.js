@@ -53,6 +53,9 @@ const PATHS = {
   info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8h.01',
   chevD: 'M5 9l7 7 7-7',
   history: 'M3 12a9 9 0 1 0 3-6.7M3 4v5h5M12 8v4l3 2',
+  download: 'M12 4v11M7.5 11l4.5 4.5 4.5-4.5M5 20h14',
+  mic: 'M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zM6 11.5a6 6 0 0 0 12 0M12 17.5V21',
+  eye: 'M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12zM12 14.8a2.8 2.8 0 1 0 0-5.6 2.8 2.8 0 0 0 0 5.6z',
 };
 
 export const Icon = ({ name, size = 22, sw = 1.8, fill, class: c }) => html`<svg class=${cx('icon', c)} width=${size} height=${size} viewBox="0 0 24 24" fill=${fill ? 'currentColor' : 'none'} fill-opacity=${fill === true ? 1 : fill || 0} stroke="currentColor" stroke-width=${sw} stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d=${PATHS[name]} /></svg>`;
@@ -83,6 +86,23 @@ export function Photo({ uid, pid, class: c, alt = 'Foto', onClick }) {
   return html`<div class=${cx('photo ph', c, err && 'err')} role="img" aria-label=${alt}>${err ? html`<${Icon} name="image" size=${22} />` : null}</div>`;
 }
 
+/** Botón “Guardar en el dispositivo” para una foto/video que ya está en una URL local (blob:). */
+export function SaveButton({ url, name, class: c = 'btn tinted block', label = 'Guardar en el dispositivo' }) {
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    if (!url || busy) return;
+    setBusy(true);
+    try {
+      const blob = await (await fetch(url)).blob();
+      const { saveToDevice, extOf } = await import('../photos.js');
+      const r = await saveToDevice(blob, `${name}.${extOf(blob.type)}`);
+      if (r !== 'cancel') toast(r === 'shared' ? 'Listo: elige “Guardar” en el menú' : 'Descargado en tu dispositivo', { icon: '💾' });
+    } catch { toast('No pude guardarlo. Mantén presionada la imagen para guardarla.', { icon: '⚠️' }); }
+    setBusy(false);
+  };
+  return html`<button class=${c} disabled=${!url || busy} onClick=${go}><${Icon} name="download" size=${18} /> ${busy ? 'Un momento…' : label}</button>`;
+}
+
 export const Avatar = ({ doc, size = 40, ring, class: c }) => {
   const color = doc?.color || '#8b7cff';
   const initial = (doc?.name || '?').trim().slice(0, 1).toUpperCase();
@@ -92,6 +112,27 @@ export const Avatar = ({ doc, size = 40, ring, class: c }) => {
 };
 
 // ---------- anillo y números ----------
+/** Anillos concéntricos animados (estilo “actividad”): cada uno es { value, max, color }. */
+export function Rings({ rings, size = 168, stroke = 15, gap = 5, children }) {
+  const [on, setOn] = useState(false);
+  useEffect(() => { const id = requestAnimationFrame(() => setOn(true)); return () => cancelAnimationFrame(id); }, []);
+  const mid = size / 2;
+  return html`<div class="ring rings" style=${`width:${size}px;height:${size}px`}>
+    <svg viewBox=${`0 0 ${size} ${size}`} aria-hidden="true">
+      ${rings.map((rg, i) => {
+        const r = mid - stroke / 2 - i * (stroke + gap), circ = 2 * Math.PI * r;
+        const pct = Math.max(0, Math.min(1, rg.max ? rg.value / rg.max : 0));
+        return html`<g>
+          <circle cx=${mid} cy=${mid} r=${r} fill="none" stroke=${rg.color} stroke-opacity=".16" stroke-width=${stroke} />
+          <circle class="ring-arc" cx=${mid} cy=${mid} r=${r} fill="none" stroke=${rg.color} stroke-width=${stroke} stroke-linecap="round" style=${`transition-delay:${i * 120}ms`}
+            stroke-dasharray=${circ} stroke-dashoffset=${circ * (1 - (on ? Math.max(pct, pct > 0 ? 0.015 : 0) : 0))} transform=${`rotate(-90 ${mid} ${mid})`} />
+        </g>`;
+      })}
+    </svg>
+    <div class="ring-in">${children}</div>
+  </div>`;
+}
+
 export function Ring({ value, max, size = 120, stroke = 12, color = 'var(--accent)', children, class: c }) {
   const [p, setP] = useState(0);
   const pct = Math.max(0, Math.min(1, max ? value / max : 0));

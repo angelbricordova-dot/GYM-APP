@@ -1,7 +1,7 @@
 import { html, useState } from '../../vendor/preact-htm.js';
 import * as S from '../store.js';
 import * as L from '../logic.js';
-import { Icon, Flame, Photo, Segmented, LineChart, BarChart, Ring, Sheet, Field, Empty, toast, cx, fmtKg, fmtShort, fmtDay } from './kit.js';
+import { Icon, Flame, Photo, Segmented, LineChart, Ring, Rings, Sheet, Field, Empty, toast, cx, fmtKg, fmtShort, fmtDay } from './kit.js';
 import { Calendar, DaySheet } from './calendar.js';
 
 const MONTH = (y, m) => { const t = new Date(y, m, 1).toLocaleDateString('es-MX', { month: 'long' }); return t[0].toUpperCase() + t.slice(1); };
@@ -19,14 +19,13 @@ export function Progress() {
 }
 
 /** Resumen de un documento (el mío o el de mi pareja): análisis del mes, calendario, tendencia y fotos. */
-export function Summary({ doc, isMe }) {
+export function Summary({ doc, isMe, hidePhotos }) {
   const now = new Date();
   const [mo, setMo] = useState({ y: now.getFullYear(), m: now.getMonth(), dir: 0 });
   const [day, setDay] = useState(null);
   const [allPhotos, setAllPhotos] = useState(false);
   const isCurrent = mo.y === now.getFullYear() && mo.m === now.getMonth();
   const shift = (d) => { const n = new Date(mo.y, mo.m + d, 1); if (n > new Date(now.getFullYear(), now.getMonth(), 1)) return; setMo({ y: n.getFullYear(), m: n.getMonth(), dir: d }); };
-  const trend = L.monthlyCounts(doc, 6);
   const photoCount = Object.values(doc.checkins).filter((c) => c.photo).length;
 
   return html`<div class="stack-lg">
@@ -37,16 +36,12 @@ export function Summary({ doc, isMe }) {
     </div>
     <${MonthAnalysis} doc=${doc} y=${mo.y} m=${mo.m} isMe=${isMe} />
     <section class="card rise" style="--i:1"><${Calendar} doc=${doc} onDay=${setDay} month=${mo} onMonth=${setMo} hideHead /></section>
-    <section class="card rise" style="--i:2">
-      <h2>Últimos 6 meses</h2>
-      <${BarChart} items=${trend.map((t, i) => ({ label: t.label, value: t.count, hot: i === trend.length - 1 }))} />
-      <p class="muted small">Días de gym por mes: así se ve tu constancia con el paso del tiempo.</p>
-    </section>
+    <section class="card rise" style="--i:2"><${Mosaic} doc=${doc} onDay=${setDay} /></section>
     <${StatGrid} doc=${doc} />
-    <section class="card rise" style="--i:3">
+    ${!hidePhotos && html`<section class="card rise" style="--i:3">
       <div class="row-between"><h2>${isMe ? 'Mis fotos' : 'Sus fotos'}${photoCount > 0 ? html` <small class="muted">· ${photoCount}</small>` : ''}</h2>${photoCount > 12 && html`<button class="btn tinted sm" onClick=${() => setAllPhotos(true)}>Ver todas</button>`}</div>
       <${Gallery} doc=${doc} onDay=${setDay} />
-    </section>
+    </section>`}
     ${allPhotos && html`<${Sheet} title=${isMe ? 'Todas mis fotos' : 'Todas sus fotos'} full onClose=${() => setAllPhotos(false)}><${Gallery} doc=${doc} onDay=${(d) => { setAllPhotos(false); setDay(d); }} limit=${Infinity} /><//>`}
     ${day && html`<${DaySheet} doc=${doc} date=${day} isMe=${isMe} onClose=${() => setDay(null)} />`}
   </div>`;
@@ -60,28 +55,65 @@ export function MonthAnalysis({ doc, y, m, isMe = true }) {
   const diff = r.prev == null ? 0 : r.attended - r.prev;
   const fresh = r.expected === 0; // recién empiezas: aún no hay días “planeados” contra los que medirte
   const verdict = fresh ? (r.attended ? '¡Buen comienzo! Así se empieza.' : 'Tu primer día cuenta desde hoy.') : r.pct >= 100 ? '¡Meta del mes cumplida! 🎉' : r.pct >= 70 ? 'Vas muy bien, sigue así.' : r.pct >= 40 ? 'Hay margen para mejorar: una sesión más por semana lo cambia.' : r.attended ? 'Un mes tranquilo. El siguiente puede ser el tuyo.' : 'Aún sin entrenos este mes.';
+  const info = L.streakInfo(doc);
+  const wk = r.weeks.find((w) => w.current) || r.weeks.at(-1);
+  const ms = L.nextMilestone(info.current);
+  const rings = [
+    { value: r.attended, max: r.expected || r.attended || 1, color: 'var(--accent)' },
+    { value: wk?.count || 0, max: wk?.goal || doc.weeklyGoal, color: 'var(--love)' },
+    { value: info.current, max: ms.next, color: 'var(--ember)' },
+  ];
   return html`<section class="card month rise">
-    <div class="month-head">
-      <div>
-        <small class="muted">Meta: ${doc.weeklyGoal} días por semana</small>
-        <div class="month-big"><b>${r.attended}</b><span>${fresh ? (r.attended === 1 ? 'día este mes' : 'días este mes') : `de ${r.expected} días`}</span></div>
-        <p class="verdict">${verdict}</p>
-      </div>
-      ${!fresh && html`<${Ring} value=${r.attended} max=${r.expected} size=${92} stroke=${10}><b class="ring-sm">${r.pct}%</b><//>`}
+    <div class="month-hero">
+      <${Rings} rings=${rings} size=${156} stroke=${15}>
+        <b class="ring-big">${r.attended}</b><small>${r.attended === 1 ? 'día' : 'días'}</small>
+      <//>
+      <ul class="ring-legend">
+        <li style="--c:var(--accent)"><i></i><div><b>${r.attended}${fresh ? '' : html`<span>/${r.expected}</span>`}</b><small>${fresh ? 'días este mes' : 'días del mes'}</small></div></li>
+        <li style="--c:var(--love)"><i></i><div><b>${wk?.count || 0}<span>/${wk?.goal || doc.weeklyGoal}</span></b><small>${wk?.current ? 'esta semana' : 'última semana'}</small></div></li>
+        <li style="--c:var(--ember)"><i></i><div><b>${info.current}<span>/${ms.next}</span></b><small>racha · próximo hito</small></div></li>
+      </ul>
     </div>
+    <p class="verdict">${verdict}</p>
     <ul class="facts">
       <li><${Icon} name="check" size=${16} sw=${2.6} /> ${name} <b>${r.attended}</b> ${r.attended === 1 ? 'día' : 'días'}${r.paused ? ` (con ${r.paused} en pausa)` : ''}</li>
       ${!fresh && html`<li class=${cx(r.missed > 0 && 'miss')}><${Icon} name=${r.missed > 0 ? 'x' : 'check'} size=${16} sw=${2.6} /> ${r.missed > 0 ? html`${isMe ? 'Faltaste' : 'Faltó'} <b>${r.missed}</b> ${r.missed === 1 ? 'día' : 'días'} de los planeados` : 'No faltó ningún día planeado'}</li>`}
       ${r.prev != null && html`<li><${Icon} name="chart" size=${16} /> ${diff === 0 ? 'Igual que' : diff > 0 ? html`<b class="up">+${diff}</b> más que en` : html`<b class="down">${diff}</b> menos que en`} ${MONTH(...(m === 0 ? [y - 1, 11] : [y, m - 1])).toLowerCase()} (${r.prev})</li>`}
     </ul>
-    <div class="weeks">${r.weeks.map((w, i) => html`<div class=${cx('wk', w.hit && 'hit', w.current && !w.hit && 'now')}>
-      <div class="wk-bar"><i style=${`height:${Math.min(100, (w.count / w.goal) * 100)}%`}></i></div><b>${w.count}/${w.goal}</b><small>${w.current ? 'Esta' : `Sem ${i + 1}`}</small></div>`)}</div>
+    <div class="week-rings">${r.weeks.map((w, i) => html`<div class=${cx('wr', w.hit && 'hit', w.current && !w.hit && 'now')}>
+      <${Ring} value=${w.count} max=${w.goal} size=${50} stroke=${6} color=${w.hit ? 'var(--good)' : 'var(--accent)'}><b>${w.hit ? '✓' : w.count}</b><//>
+      <small>${w.current ? 'Esta' : `Sem ${i + 1}`}</small></div>`)}</div>
     <p class="muted small center">${r.weeksHit} de ${r.weeks.length} ${r.weeks.length === 1 ? 'semana cumplida' : 'semanas cumplidas'}${r.bestChain > 1 ? ` · mejor racha del mes: ${r.bestChain} días` : ''}</p>
     ${(r.sessions > 0 || r.topDays.length > 0) && html`<div class="kv">
       ${r.sessions > 0 && html`<div><b>${r.sessions}</b><small>entrenos con ejercicios</small></div><div><b>${r.sets}</b><small>series</small></div><div><b>${Math.round(r.volume).toLocaleString('es-MX')}</b><small>kg movidos</small></div>`}
       ${r.prs > 0 && html`<div><b>${r.prs}</b><small>récords</small></div>`}
       ${r.topDays.length > 0 && html`<div><b>${r.topDays.join(' y ')}</b><small>día favorito${r.avgTime ? ` · ${r.avgTime} h` : ''}</small></div>`}
     </div>`}
+  </section>`;
+}
+
+/** Mosaico de constancia: 12 semanas, un cuadrito por día (como un “mapa de calor”). Toca un día con foto para verlo. */
+export function Mosaic({ doc, onDay }) {
+  const cols = L.mosaic(doc, 12);
+  const days = cols.flat().filter((d) => d.state === 'on' || d.state === 'strong').length;
+  return html`<div class="mosaic-wrap">
+    <div class="row-between"><h2>Constancia</h2><small class="muted">${days} ${days === 1 ? 'día' : 'días'} en 12 semanas</small></div>
+    <div class="mosaic" role="img" aria-label=${`${days} días de gym en las últimas 12 semanas`}>
+      <div class="mo-dow">${L.DAY_INITIALS.map((d) => html`<span>${d}</span>`)}</div>
+      <div class="mo-grid">${cols.map((w, wi) => html`<div class="mo-col">${w.map((d, di) => html`<button class=${cx('mo-cell', d.state, d.today && 'today')} style=${`--i:${wi * 7 + di}`} disabled=${!doc.checkins[d.date]} onClick=${() => onDay?.(d.date)} aria-label=${fmtDay(d.date)}></button>`)}</div>`)}</div>
+    </div>
+    <div class="mo-legend"><span><i class="mo-cell none"></i> descanso</span><span><i class="mo-cell on"></i> check-in</span><span><i class="mo-cell strong"></i> con entreno</span><span><i class="mo-cell pause"></i> pausa</span></div>
+  </div>`;
+}
+
+/** Tira rápida de las últimas fotos compartidas. */
+export function PhotoStrip({ doc, onDay, onAll, title = 'Sus fotos' }) {
+  const days = Object.keys(doc.checkins).filter((d) => doc.checkins[d].photo).sort().reverse();
+  return html`<section class="card rise photo-strip">
+    <div class="row-between"><h2>${title}${days.length > 0 ? html` <small class="muted">· ${days.length}</small>` : ''}</h2>${days.length > 0 && html`<button class="btn tinted sm" onClick=${onAll}>Ver todas</button>`}</div>
+    ${days.length === 0
+      ? html`<p class="muted small">Todavía no ha compartido fotos. Cuando se tome la foto del espejo después de entrenar, aparece aquí.</p>`
+      : html`<div class="strip">${days.slice(0, 10).map((d) => html`<button class="strip-item" onClick=${() => onDay(d)} aria-label=${`Foto del ${fmtDay(d)}`}><${Photo} uid=${doc.id} pid=${doc.checkins[d].photo} /><span>${fmtShort(d)}</span></button>`)}</div>`}
   </section>`;
 }
 

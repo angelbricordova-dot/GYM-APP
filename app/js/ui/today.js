@@ -49,10 +49,10 @@ export function Today() {
 
     <${PartnerCard} partner=${partner} />
 
-    <button class="card points-card rise" style="--i:4" onClick=${() => goTab('rewards')}>
+    <button class=${cx('card points-card rise', bal < 0 && 'in-debt')} style="--i:4" onClick=${() => goTab('rewards')}>
       <span class="points-ic"><${Heart} size=${26} /></span>
-      <div class="grow"><small class="muted">Puntos de amor</small><b class="points-n"><${CountUp} value=${bal} /></b></div>
-      <small class="muted next-txt">${nextReward(bal)}</small>
+      <div class="grow"><small class="muted">${bal < 0 ? 'Tienes una deuda de' : 'Puntos de amor'}</small><b class=${cx('points-n', bal < 0 && 'neg')}><${CountUp} value=${bal < 0 ? -bal : bal} />${bal < 0 && html`<span class="debt-unit">puntos</span>`}</b></div>
+      <small class="muted next-txt">${bal < 0 ? 'Se paga con tus próximos puntos' : nextReward(bal)}</small>
       <${Icon} name="right" size=${16} class="chev" />
     </button>
 
@@ -64,7 +64,11 @@ export function Today() {
 function SkipStatus({ skip }) {
   const pts = S.skipPenalties()[L.ymd()];
   const name = S.state.partner?.name || 'tu pareja';
-  return html`<div class="skip-status"><b>😔 Hoy no fui</b><small>“${skip.reason}”</small><span>${pts ? `${name[0].toUpperCase() + name.slice(1)} te quitó ${pts} puntos de amor. Entrenar hoy los devuelve.` : `Esperando a que ${name} decida cuántos puntos te quita.`}</span></div>`;
+  const cap = name[0].toUpperCase() + name.slice(1);
+  const txt = pts === undefined ? `Esperando a que ${name} decida cuántos puntos te quita.` : pts === 0 ? `${cap} decidió no quitarte ningún punto 💗` : `${cap} te quitó ${pts} puntos de amor. Entrenar hoy los devuelve.`;
+  const key = `status:${L.ymd()}:${pts}`;
+  if (S.isDismissed(key)) return null;
+  return html`<div class="skip-status"><button class="icon-btn flat skip-x" onClick=${() => S.dismiss(key)} aria-label="Cerrar este aviso"><${Icon} name="x" size=${16} /></button><b>😔 Hoy no fui</b><small>“${skip.reason}”</small><span>${txt}</span></div>`;
 }
 
 function Header({ me }) {
@@ -119,14 +123,14 @@ const nextReward = (bal) => {
 
 /** Avisos importantes: notas nuevas, ideas por decidir, instalación en iPhone. */
 function Banners() {
-  const notes = S.state.messages.filter((m) => m.from !== S.state.auth.uid && m.kind !== 'reaction' && m.ts > S.state.seenAt);
+  const notes = S.state.messages.filter((m) => m.from !== S.state.auth.uid && m.kind !== 'reaction' && m.kind !== 'skip' && m.ts > S.state.seenAt);
   const pending = S.pendingForMe().length;
   const newRoutines = S.routinesNew();
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) && !navigator.standalone && !matchMedia('(display-mode: standalone)').matches;
   const [hideIos, setHideIos] = useState(() => { try { return !!localStorage.getItem('lindwyrm.iosTip'); } catch { return false; } });
   if (!notes.length && !pending && !newRoutines.length && (!ios || hideIos)) return null;
   return html`<div class="group banners rise">
-    ${notes.length > 0 && html`<div class="row" role="button" onClick=${() => goTab('together')}><span class="lead tint-rose">${notes.at(-1).kind === 'skip' ? '😔' : '💌'}</span><div class="grow"><b>${notes.at(-1).kind === 'skip' ? `${S.state.partner?.name} hoy no fue al gym` : `Nota de ${S.state.partner?.name}`}</b><small class="muted">${notes.at(-1).text}</small></div><${Icon} name="right" size=${16} class="chev" /></div>`}
+    ${notes.length > 0 && html`<div class="row" role="button" onClick=${() => goTab('together')}><span class="lead tint-rose">💌</span><div class="grow"><b>Nota de ${S.state.partner?.name}</b><small class="muted">${notes.at(-1).text}</small></div><${Icon} name="right" size=${16} class="chev" /></div>`}
     ${newRoutines.length > 0 && html`<div class="row" role="button" onClick=${() => goTab('together')}><span class="lead tint-rose">🏋️</span><div class="grow"><b>${S.state.partner?.name} te recomendó una rutina</b><small class="muted">${newRoutines[0].name}</small></div><${Icon} name="right" size=${16} class="chev" /></div>`}
     ${pending > 0 && html`<div class="row" role="button" onClick=${() => goTab('rewards')}><span class="lead tint-rose">🎁</span><div class="grow"><b>${pending} idea${pending > 1 ? 's' : ''} por decidir</b><small class="muted">Tu pareja propuso un premio</small></div><${Icon} name="right" size=${16} class="chev" /></div>`}
     ${ios && !hideIos && html`<div class="row static"><span class="lead">📲</span><div class="grow"><b>Instálala como app</b><small class="muted">Safari → Compartir → Agregar a pantalla de inicio</small></div><button class="icon-btn flat" onClick=${() => { try { localStorage.setItem('lindwyrm.iosTip', '1'); } catch {} setHideIos(true); }} aria-label="Cerrar"><${Icon} name="x" size=${16} /></button></div>`}
@@ -152,16 +156,19 @@ function PartnerCard({ partner }) {
   const d = partner.doc;
   const info = d ? L.streakInfo(d) : null;
   const ck = d?.checkins[L.ymd()];
+  const sk = d?.skips?.[L.ymd()];
+  const skKey = `skipline:${partner.id}:${L.ymd()}`;
   const cheer = async () => { const r = await S.sendMessage(L.PHRASES[Math.floor(Math.random() * L.PHRASES.length)], 'cheer'); toast(r.ok ? `Nota enviada a ${partner.name}` : r.data.error, { icon: r.ok ? '💌' : '⚠️' }); };
   return html`<section class="card partner-card rise" style="--i:3">
-    <button class="pc-main" onClick=${() => goTab('together')}>
+    <button class="pc-main" onClick=${() => openScreen('partner')} aria-label=${`Ver el perfil de ${partner.name}`}>
       <${Avatar} doc=${d || { name: partner.name }} size=${46} />
       <div class="grow">
         <b>${partner.name}</b>
-        <small class="muted">${!d ? 'Aún sin datos' : ck ? '✅ Ya entrenó hoy' : d.skips?.[L.ymd()] ? `😔 Hoy no fue: ${d.skips[L.ymd()].reason}` : info.atRisk ? '⚠️ Hoy es su último día de margen' : 'Aún no entrena hoy'}</small>
+        <small class="muted">${!d ? 'Aún sin datos' : ck ? '✅ Ya entrenó hoy' : sk ? '😔 Hoy no fue al gym' : info.atRisk ? '⚠️ Hoy es su último día de margen' : 'Aún no entrena hoy'}</small>
       </div>
       ${info && html`<div class="pc-streak"><${Flame} size=${22} lit=${info.alive} /><b>${info.current}</b></div>`}
     </button>
+    ${sk && !ck && !S.isDismissed(skKey) && html`<div class="skip-note"><span>“${sk.reason}”</span><button class="icon-btn flat" onClick=${() => S.dismiss(skKey)} aria-label="Cerrar este aviso"><${Icon} name="x" size=${16} /></button></div>`}
     <div class="pc-actions">
       <button class="btn tinted sm" onClick=${cheer}><${Icon} name="heart" size=${15} /> Mandar ánimo</button>
       <button class="btn tinted sm" onClick=${() => setChallenge(true)}><${Icon} name="target" size=${15} /> Retar</button>

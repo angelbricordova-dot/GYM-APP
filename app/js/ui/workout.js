@@ -48,6 +48,7 @@ export function Workout() {
   const edit = (fn) => { const d = structuredClone(draft); fn(d); S.setDraft(d); };
   if (!draft) return null; // el entreno se empieza desde Entrenar u Hoy
 
+  const editing = !!draft.editingId;
   const elapsed = Math.floor((Date.now() - draft.startedAt) / 1000);
   const doneSets = draft.exercises.reduce((a, ex) => a + ex.sets.filter((s) => s.done).length, 0);
   const totalSets = draft.exercises.reduce((a, ex) => a + ex.sets.length, 0);
@@ -66,14 +67,16 @@ export function Workout() {
       // la siguiente serie aparece con el mismo registro: solo hay que subirle o bajarle
       if (s.done) { const next = e.sets.slice(i + 1).find((x) => !x.done); if (next) { next.kg = s.kg; next.reps = s.reps; } }
     });
-    if (!st.done) { const total = restDefault(); setRest({ endsAt: Date.now() + total * 1000, total }); }
+    if (!st.done && !editing) { const total = restDefault(); setRest({ endsAt: Date.now() + total * 1000, total }); }
   };
 
   return html`<div class="screen workout">
     <div class="screen-top">
-      <button class="icon-btn" onClick=${closeScreen} aria-label="Minimizar entreno"><${Icon} name="chevD" size=${20} /></button>
-      <div class="w-clock"><span>${fmtDur(elapsed)}</span><small>${doneSets} de ${totalSets} series</small></div>
-      <button class="btn primary sm" onClick=${() => setFinish(true)}>Terminar</button>
+      ${editing
+        ? html`<button class="icon-btn" onClick=${() => { if (confirm('¿Salir sin guardar los cambios?')) { S.setDraft(null); closeScreen(); } }} aria-label="Cancelar edición"><${Icon} name="x" size=${20} /></button>`
+        : html`<button class="icon-btn" onClick=${closeScreen} aria-label="Minimizar entreno"><${Icon} name="chevD" size=${20} /></button>`}
+      <div class="w-clock">${editing ? html`<span class="w-edit">Editando entreno</span><small>${fmtShort(draft.date)} · ${doneSets} de ${totalSets} series</small>` : html`<span>${fmtDur(elapsed)}</span><small>${doneSets} de ${totalSets} series</small>`}</div>
+      <button class="btn primary sm" onClick=${() => setFinish(true)}>${editing ? 'Guardar' : 'Terminar'}</button>
     </div>
 
     <div class="w-progress" role="progressbar" aria-valuemin="0" aria-valuemax=${totalSets} aria-valuenow=${doneSets} aria-label="Series hechas"><i style=${`width:${totalSets ? (doneSets / totalSets) * 100 : 0}%`}></i></div>
@@ -186,22 +189,39 @@ function FinishSheet({ draft, doc, edit, onClose }) {
   const sets = draft.exercises.flatMap((e) => e.sets);
   const done = sets.filter((s) => s.done).length;
   const unticked = sets.filter((s) => !s.done && L.num(s.reps) > 0).length;
-  const durationMin = Math.max(1, Math.round((Date.now() - draft.startedAt) / 60000));
+  const editing = !!draft.editingId;
+  const durationMin = editing ? draft.durationMin || 0 : Math.max(1, Math.round((Date.now() - draft.startedAt) / 60000));
   const preview = {
     id: 'preview',
     exercises: draft.exercises.map((e) => ({ name: e.name, sets: e.sets.filter((s) => s.done).map((s) => ({ kg: L.num(s.kg), reps: Math.round(L.num(s.reps)) })) })).filter((e) => e.sets.length),
   };
-  const prs = L.findPRs(doc, preview);
+  const baseDoc = editing ? { ...doc, sessions: doc.sessions.filter((x) => x.id !== draft.editingId) } : doc;
+  const prs = L.findPRs(baseDoc, preview);
   const volume = L.sessionVolume(preview);
 
   const save = (withPhoto) => {
-    const s = S.saveSession({ ...draft, durationMin, date: L.ymd(), time: new Date(draft.startedAt).toTimeString().slice(0, 5) });
+    const s = S.saveSession({ ...draft, durationMin, date: editing ? draft.date : L.ymd(), time: editing ? draft.time : new Date(draft.startedAt).toTimeString().slice(0, 5) });
     if (!s) return;
+    if (editing) { S.setDraft(null); closeScreen(); toast('Cambios guardados', { icon: '✅' }); return; }
     if (asRoutine && rName.trim()) S.saveRoutine({ id: uid(), name: rName.trim(), exercises: draft.exercises.map((e) => e.name) });
     S.setDraft(null);
     if (withPhoto) replaceScreen('checkin', { session: s });
     else { closeScreen(); toast('Entreno guardado sin foto: no cuenta para la racha', { icon: '💾' }); }
   };
+
+  const remove = () => { if (confirm('¿Eliminar este entreno? Se revierten sus récords y puntos por récord (el check-in del día se queda).')) { S.deleteSession(draft.editingId); S.setDraft(null); closeScreen(); toast('Entreno eliminado', { icon: '🗑️' }); } };
+  if (editing) return html`<${Sheet} title="Guardar cambios" onClose=${onClose}>
+    <div class="fin-stats">
+      <div><b>${durationMin || '–'}</b><small>min</small></div>
+      <div><b>${done}</b><small>series</small></div>
+      <div><b>${Math.round(volume).toLocaleString('es-MX')}</b><small>kg movidos</small></div>
+    </div>
+    ${prs.length > 0 && html`<div class="pr-banner">🏆 Récord en ${prs.join(', ')}</div>`}
+    <${Field} label="Nota (opcional)"><input value=${draft.note} onInput=${(e) => edit((d) => { d.note = e.target.value; })} placeholder="Cómo te sentiste…" /><//>
+    <button class="btn primary block lg" disabled=${done === 0} onClick=${() => save(false)}>Guardar cambios</button>
+    ${done === 0 && html`<p class="muted small center">Deja al menos una serie con ✓ (o elimina el entreno).</p>`}
+    <button class="link danger" onClick=${remove}>Eliminar este entreno</button>
+  <//>`;
 
   return html`<${Sheet} title="Terminar entreno" onClose=${onClose}>
     <div class="fin-stats">

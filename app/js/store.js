@@ -14,6 +14,7 @@ const fresh = () => ({
   invite: null,
   pendingInvite: null, // código que llegó por enlace (?join=CODIGO) antes de tener cuenta
   seenAt: 0,
+  dismissed: [], // avisos de la pantalla de inicio que cerré (ids)
   draft: null, // entreno en curso (no se sincroniza)
   meSyncedAt: 0,
   dirty: false,
@@ -220,6 +221,8 @@ export const addSupp = ({ name, emoji, when }) => update((me) => {
   if (!n) return;
   me.supps = [...L.suppList(me), { id: L.uid(), name: n, emoji: String(emoji || '💊').slice(0, 4), when: when === 'gym' ? 'gym' : 'daily' }];
 });
+/** Restar puntos por cada día que pase sin tomar creatina o proteína (cuenta desde hoy). */
+export const setSuppPenalty = (on) => update((me) => { if (on) me.suppPenaltySince = me.suppPenaltySince || L.ymd(); else delete me.suppPenaltySince; });
 export const removeSupp = (id) => update((me) => { me.supps = L.suppList(me).filter((x) => x.id !== id); });
 
 // ---------- “hoy no voy” ----------
@@ -241,13 +244,13 @@ export const deleteSession = (id) => update((me) => { me.sessions = me.sessions.
 
 export function saveSession(s) {
   const clean = {
-    id: L.uid(), date: s.date || L.ymd(), time: s.time || L.hm(), durationMin: s.durationMin || 0, note: (s.note || '').trim(),
+    id: s.editingId || L.uid(), date: s.date || L.ymd(), time: s.time || L.hm(), durationMin: s.durationMin || 0, note: (s.note || '').trim(),
     exercises: s.exercises
       .map((ex) => ({ name: ex.name.trim(), sets: ex.sets.filter((x) => x.done && L.num(x.reps) > 0).map((x) => ({ kg: L.num(x.kg), reps: Math.round(L.num(x.reps)) })) }))
       .filter((ex) => ex.name && ex.sets.length),
   };
   if (!clean.exercises.length) return null;
-  update((me) => me.sessions.push(clean));
+  update((me) => { me.sessions = s.editingId ? me.sessions.map((x) => (x.id === s.editingId ? clean : x)) : [...me.sessions, clean]; });
   return clean;
 }
 
@@ -263,6 +266,18 @@ export async function checkIn({ blob, sessionId, date = L.ymd() }) {
 
 export const removeCheckin = (date) => update((me) => { delete me.checkins[date]; });
 
+/** Editar un entreno ya guardado: se abre como borrador con todas sus series marcadas. */
+export function beginEdit(id) {
+  const s = state.me.sessions.find((x) => x.id === id);
+  if (!s || state.draft) return false;
+  state.draft = {
+    editingId: s.id, startedAt: Date.now(), date: s.date, time: s.time, durationMin: s.durationMin || 0, note: s.note || '',
+    exercises: s.exercises.map((ex) => ({ id: L.uid(), name: ex.name, sets: ex.sets.map((x) => ({ id: L.uid(), kg: x.kg ? String(x.kg) : '', reps: String(x.reps), done: true })) })),
+  };
+  commit();
+  return true;
+}
+
 // ---------- borrador del entreno en curso ----------
 export const setDraft = (d) => { state.draft = d; save(); emit(); };
 
@@ -277,7 +292,22 @@ export const propose = (p) => act('POST', '/proposals', p);
 export const decide = (id, action, cost) => act('POST', `/proposals/${id}`, { action, cost });
 export const markVoucherDone = (id) => act('POST', `/vouchers/${id}/done`);
 export const sendMessage = (text, kind = 'text', ref = null) => act('POST', '/messages', { text, kind, ref });
-export const likeMessage = (id) => act('POST', `/messages/${id}/like`);
+/** Corazón al instante (optimista): se ve de inmediato y el servidor lo confirma; si falla, se revierte. */
+export async function likeMessage(id) {
+  const m = state.messages.find((x) => x.id === id);
+  const me = uid();
+  if (!m || !me) return { ok: false, data: {} };
+  const before = m.likes || [];
+  m.likes = before.includes(me) ? before.filter((x) => x !== me) : [...before, me];
+  commit();
+  const res = await call('POST', `/messages/${id}/like`);
+  if (res.ok) m.likes = res.data.message.likes; else m.likes = before;
+  commit();
+  return res;
+}
+
+export const dismiss = (id) => { state.dismissed = [...(state.dismissed || []), id].slice(-60); commit(); };
+export const isDismissed = (id) => (state.dismissed || []).includes(id);
 export const deleteMessage = (id) => act('POST', `/messages/${id}/delete`);
 
 // ---------- retos ----------
@@ -325,7 +355,7 @@ export async function redeem(proposal) {
 }
 
 export const markSeen = () => { state.seenAt = Date.now(); commit(); };
-export const unread = () => state.messages.filter((m) => m.from !== state.auth?.uid && m.ts > state.seenAt).length;
+export const unread = () => state.messages.filter((m) => m.from !== state.auth?.uid && m.kind !== 'skip' && m.kind !== 'reaction' && m.ts > state.seenAt).length;
 export const pendingForMe = () => state.proposals.filter((p) => p.status === 'pending' && p.lastBy !== state.auth?.uid);
 
 export function exportJSON() {

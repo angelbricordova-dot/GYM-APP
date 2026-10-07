@@ -488,10 +488,10 @@ async function penalizeMessage(user, id, body) {
   if (m.from === user.id) return fail(403, 'Eso lo decide tu pareja.');
   if (m.penalty) return fail(409, 'Ya decidiste cuántos puntos quitar.');
   const points = Math.round(Number(body.points));
-  if (!(points >= L.PENALTY.min && points <= L.PENALTY.max)) return fail(400, `Elige de ${L.PENALTY.min} a ${L.PENALTY.max} puntos.`);
+  if (!(points >= 0 && points <= L.PENALTY.max)) return fail(400, `Elige de 0 a ${L.PENALTY.max} puntos.`); // 0 = no quitar ningún punto
   m.penalty = { points, by: user.id, ts: Date.now() };
   await db.set(key, m);
-  await push.notify(m.from, { type: 'notes', title: `${first(user.name)} te quitó ${points} puntos de amor`, body: m.text, url: '/?tab=together' });
+  await push.notify(m.from, { type: 'notes', title: points ? `${first(user.name)} te quitó ${points} puntos de amor` : `${first(user.name)} no te quitó ningún punto 💗`, body: m.text, url: '/?tab=together' });
   return json(200, { message: m });
 }
 
@@ -790,6 +790,6 @@ export default async function handler(req) {
   } catch (e) {
     if (e instanceof HttpError) return await fail(e.status, e.message);
     console.error(e);
-    return fail(500, 'Error del servidor. Intenta de nuevo.');
+    return fail(500, `Error del servidor. Intenta de nuevo. (${String(e?.message || e).slice(0, 120)})`);
   }
 }

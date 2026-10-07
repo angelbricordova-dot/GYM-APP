@@ -1,16 +1,17 @@
-import { html, useState, useEffect } from '../../vendor/preact-htm.js';
+import { html, useState, useEffect, useRef } from '../../vendor/preact-htm.js';
 import * as S from '../store.js';
 import * as L from '../logic.js';
-import { accentVars } from '../theme.js';
-import { Icon, Flame, Avatar, Segmented, Empty, toast, cx } from './kit.js';
-import { ChallengesPanel } from './challenges.js';
+import { accentVars, haptic } from '../theme.js';
+import { Icon, Flame, Avatar, Segmented, Empty, Sheet, toast, cx } from './kit.js';
+import { ChallengesPanel, NewChallengeSheet } from './challenges.js';
 import { RoutinesPanel } from './routines.js';
 import { SuppPanel } from './supplements.js';
 import { PenaltyForm } from './skip.js';
 import { JoinOtherSheet } from './link.js';
 import { shareInvite, copyInvite } from '../invite.js';
 import { openScreen, closeScreen } from './nav.js';
-import { Summary } from './progress.js';
+import { Summary, PhotoStrip, Gallery } from './progress.js';
+import { DaySheet } from './calendar.js';
 
 /** Todo lo de a dos: retos del día, tablero de motivación y rutinas recomendadas. El perfil de mi pareja se abre desde su foto. */
 export function Together() {
@@ -38,9 +39,12 @@ export function Together() {
   </div>`;
 
   return html`<div class="view-in">
-    <header class="top large"><div><h1>Juntos</h1></div>
-      <button class="avatar-btn" onClick=${() => openScreen('partner')} aria-label=${`Ver el perfil de ${partner.name}`}><${Avatar} doc=${partner.doc || { name: partner.name }} size=${44} ring /></button>
-    </header>
+    <header class="top large"><div><h1>Juntos</h1></div></header>
+    <button class="profile-link" onClick=${() => openScreen('partner')}>
+      <${Avatar} doc=${partner.doc || { name: partner.name }} size=${46} ring />
+      <span class="grow"><b>Ver el perfil de ${partner.name}</b><small class="muted">Su racha, sus fotos y su progreso</small></span>
+      <${Icon} name="right" size=${16} class="chev" />
+    </button>
     <${Segmented} value=${tab} onChange=${setTab} options=${[
       { id: 'challenges', label: 'Retos', badge: pending || null },
       { id: 'board', label: 'Motivación', badge: notes || null },
@@ -59,7 +63,7 @@ function Board({ partner }) {
   const me = S.state.auth.uid;
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const notes = S.state.messages.filter((m) => m.kind !== 'reaction').sort((a, b) => b.ts - a.ts);
+  const notes = S.state.messages.filter((m) => m.kind !== 'reaction' && m.kind !== 'skip').sort((a, b) => b.ts - a.ts); // las razones de “hoy no fui” no van al tablero
   useEffect(() => { S.markSeen(); }, [S.state.messages.length]);
 
   const send = async (t) => {
@@ -90,9 +94,15 @@ function Board({ partner }) {
 function Note({ n, mine, partner }) {
   const me = S.state.auth.uid;
   const liked = (n.likes || []).includes(me);
+  const [burst, setBurst] = useState(0);
+  const lastTap = useRef(0);
+  const like = () => { if (!liked) { setBurst((b) => b + 1); haptic(); } S.likeMessage(n.id); };
+  // doble toque sobre la nota = corazón (si aún no lo tiene)
+  const tap = (e) => { if (e.target.closest('button')) return; const t = Date.now(); if (t - lastTap.current < 320 && !liked) like(); lastTap.current = t; };
   const color = mine ? S.state.me.color : partner.doc?.color || '#ff5c93';
   const when = new Date(n.ts).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
-  return html`<article class=${cx('note', mine && 'mine', n.kind === 'skip' && 'skip')} style=${accentVars(color)}>
+  return html`<article class=${cx('note', mine && 'mine', n.kind === 'skip' && 'skip')} style=${accentVars(color)} onClick=${tap}>
+    ${burst > 0 && html`<span class="like-burst" key=${burst} aria-hidden="true">${Array.from({ length: 8 }, (_, i) => { const a = (i * Math.PI) / 4, d = i % 2 ? 34 : 48; return html`<i style=${`--x:${(Math.cos(a) * d).toFixed(1)}px;--y:${(Math.sin(a) * d - 18).toFixed(1)}px;--s:${0.7 + (i % 3) * 0.25}`}>❤</i>`; })}</span>`}
     ${n.kind === 'skip' && html`<span class="skip-tag">😔 ${mine ? 'Hoy no fui al gym' : 'Hoy no fue al gym'}</span>`}
     <p>${n.text}</p>
     ${n.kind === 'skip' && (n.penalty
@@ -102,8 +112,8 @@ function Note({ n, mine, partner }) {
       <small>${mine ? 'Tú' : partner.name} · ${when}</small>
       <span class="note-actions">
         ${mine && html`<button class="note-btn" onClick=${async () => { if (confirm('¿Borrar esta nota?')) await S.deleteMessage(n.id); }} aria-label="Borrar nota"><${Icon} name="trash" size=${15} /></button>`}
-        <button class=${cx('note-btn heart-btn', liked && 'on')} onClick=${() => S.likeMessage(n.id)} aria-label=${liked ? 'Quitar corazón' : 'Dar corazón'} aria-pressed=${liked}>
-          <${Icon} name="heart" size=${16} fill=${liked} />${(n.likes || []).length > 0 ? html`<b>${n.likes.length}</b>` : null}
+        <button class=${cx('note-btn heart-btn', liked && 'on')} onClick=${like} aria-label=${liked ? 'Quitar corazón' : 'Dar corazón'} aria-pressed=${liked}>
+          <span class=${cx('heart-ic', liked && 'pop')} key=${liked ? 'on' : 'off'}><${Icon} name="heart" size=${18} fill=${liked} /></span>${(n.likes || []).length > 0 ? html`<b>${n.likes.length}</b>` : null}
         </button>
       </span>
     </footer>
@@ -111,33 +121,53 @@ function Note({ n, mine, partner }) {
 }
 
 // ============ perfil de mi pareja (pantalla completa) ============
+// Se ve distinto a mi propio perfil a propósito: banda con SU color, “Perfil de …” arriba y la etiqueta de solo lectura.
 export function PartnerScreen() {
   const partner = S.state.partner;
   if (!partner) return null;
-  return html`<div class="screen profile">
-    <div class="screen-top"><button class="icon-btn" onClick=${closeScreen} aria-label="Volver"><${Icon} name="left" size=${20} /></button><b>${partner.name}</b><span></span></div>
+  const d = partner.doc;
+  return html`<div class="screen profile partner-view" style=${accentVars(d?.color || '#ff5c93')}>
+    <div class="screen-top"><button class="icon-btn" onClick=${closeScreen} aria-label="Volver"><${Icon} name="left" size=${20} /></button><b>Perfil de ${partner.name}</b><span class="ro-pill" title="Solo lectura"><${Icon} name="eye" size=${14} /></span></div>
     <div class="screen-body"><${PartnerProfile} partner=${partner} /></div>
   </div>`;
 }
 
 function PartnerProfile({ partner }) {
   const d = partner.doc;
-  const me = S.state.me;
+  const [day, setDay] = useState(null);
+  const [all, setAll] = useState(false);
+  const [challenge, setChallenge] = useState(false);
   if (!d) return html`<section class="card"><p class="muted">Cargando su perfil…</p></section>`;
   const info = L.streakInfo(d);
-  const pair = L.pairWeekStreak(me, d);
+  const pair = L.pairWeekStreak(S.state.me, d);
   const todayCk = d.checkins[L.ymd()];
-  return html`<div class="stack-lg" style=${accentVars(d.color)}>
-    <section class="card hero rise">
-      <div class="streak-row">
-        <div class=${cx('flame-wrap', info.alive && 'alive', info.atRisk && 'risk')}><${Flame} size=${72} lit=${info.alive} /></div>
-        <div class="streak-txt">
-          <div class="streak-n"><b>${info.current}</b><span>${info.current === 1 ? 'día de racha' : 'días de racha'}</span></div>
-          <p class=${cx('streak-sub', info.atRisk && 'warn')}>${todayCk ? '✅ Ya entrenó hoy' : info.atRisk ? '⚠️ Hoy es su último día de margen' : info.paused ? 'En pausa ⏸' : 'Aún no entrena hoy'}</p>
+  const photos = Object.values(d.checkins).filter((c) => c.photo).length;
+  const cheer = async () => { const r = await S.sendMessage(L.PHRASES[Math.floor(Math.random() * L.PHRASES.length)], 'cheer'); toast(r.ok ? `Nota enviada a ${partner.name}` : r.data.error, { icon: r.ok ? '💌' : '⚠️' }); };
+  return html`<div class="stack-lg">
+    <section class="pv-hero rise">
+      <div class="pv-cover"></div>
+      <div class="pv-card">
+        <div class="pv-avatar"><${Avatar} doc=${d} size=${92} ring /></div>
+        <span class="pv-badge"><${Icon} name="eye" size=${14} /> Estás viendo el perfil de ${partner.name}</span>
+        <h1>${partner.name}</h1>
+        <div class="pv-stats">
+          <div><${Flame} size=${22} lit=${info.alive} /><b>${info.current}</b><small>racha</small></div>
+          <div><b>${info.total}</b><small>días de gym</small></div>
+          <div><b>${photos}</b><small>fotos</small></div>
+        </div>
+        <p class=${cx('streak-sub', info.atRisk && 'warn')}>${todayCk ? '✅ Ya entrenó hoy' : info.atRisk ? '⚠️ Hoy es su último día de margen' : info.paused ? 'En pausa ⏸' : 'Aún no entrena hoy'}</p>
+        <div class="pv-actions">
+          <button class="btn primary sm" onClick=${() => setAll(true)} disabled=${!photos}><${Icon} name="camera" size=${16} /> Sus fotos</button>
+          <button class="btn tinted sm" onClick=${cheer}><${Icon} name="heart" size=${16} /> Ánimo</button>
+          <button class="btn tinted sm" onClick=${() => setChallenge(true)}><${Icon} name="target" size=${16} /> Retar</button>
         </div>
       </div>
-      <div class="pair-line"><span>🔥</span><div><b>${pair ? `Racha de pareja: ${pair} ${pair === 1 ? 'semana' : 'semanas'}` : 'Racha de pareja'}</b><small>${pair ? 'Semanas seguidas en que los dos cumplieron su meta' : 'Cumplan los dos su meta esta semana para empezarla'}</small></div></div>
     </section>
-    <${Summary} doc=${d} isMe=${false} />
+    <${PhotoStrip} doc=${d} onDay=${setDay} onAll=${() => setAll(true)} />
+    <section class="card rise pv-pair"><div class="pair-line"><span>🔥</span><div><b>${pair ? `Racha de pareja: ${pair} ${pair === 1 ? 'semana' : 'semanas'}` : 'Racha de pareja'}</b><small>${pair ? 'Semanas seguidas en que los dos cumplieron su meta' : 'Cumplan los dos su meta esta semana para empezarla'}</small></div></div></section>
+    <${Summary} doc=${d} isMe=${false} hidePhotos />
+    ${day && html`<${DaySheet} doc=${d} date=${day} isMe=${false} onClose=${() => setDay(null)} />`}
+    ${all && html`<${Sheet} title=${`Todas las fotos de ${partner.name}`} full onClose=${() => setAll(false)}><${Gallery} doc=${d} onDay=${(x) => { setAll(false); setDay(x); }} limit=${Infinity} /><//>`}
+    ${challenge && html`<${NewChallengeSheet} onClose=${() => setChallenge(false)} />`}
   </div>`;
 }

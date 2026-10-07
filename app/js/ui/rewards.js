@@ -25,7 +25,7 @@ export function Rewards() {
 
     <section class="card coin-hero rise">
       <div class="coin"><${Heart} size=${44} /></div>
-      <div class="coin-n"><b><${CountUp} value=${bal} /></b><small>puntos de amor</small></div>
+      <div class=${cx('coin-n', bal < 0 && 'debt')}>${bal < 0 && html`<small>Tienes una deuda de</small>`}<b class=${cx(bal < 0 && 'neg')}><${CountUp} value=${bal < 0 ? -bal : bal} /></b><small>${bal < 0 ? 'puntos de amor · se paga con los próximos que ganes' : 'puntos de amor'}</small></div>
       ${next ? html`<div class="next"><div class="meter gold"><i style=${`width:${Math.min(100, ((bal - from) / (next.cost - from)) * 100)}%`}></i></div><small class="muted">Faltan ${next.cost - bal} para ${next.emoji} ${next.name}</small></div>` : html`<small class="muted">${active.length ? '¡Ya te alcanza para todo! Elige uno 🎉' : 'Propongan su primer premio en “Ideas”.'}</small>`}
     </section>
 
