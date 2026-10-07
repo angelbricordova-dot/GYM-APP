@@ -742,6 +742,9 @@ async function pushRoutes(user, path, body, method) {
   if (path === '/push/test') {
     const fresh = await db.get(`user/${user.id}`);
     if (!(fresh.push || []).length) return fail(409, 'No hay ningún dispositivo suscrito. Activa las notificaciones primero.');
+    // con retraso: da tiempo de cerrar la app o bloquear el teléfono (con la app abierta en iPhone el aviso no se ve como banner)
+    const delay = Math.min(5, Math.max(0, Math.round(Number(body.delay) || 0)));
+    if (delay) await new Promise((r) => setTimeout(r, delay * 1000));
     const r = await push.notify(user.id, { title: 'Lindwyrm', body: '¡Las notificaciones funcionan! 💗', url: '/', tag: 'test' });
     if (r.sent) return json(200, { ok: true, sent: r.sent });
     const why = r.error ? ` El servicio de avisos respondió ${r.error.status || 'sin respuesta'}${r.error.msg ? ` (${r.error.msg})` : ''}.` : '';
@@ -756,6 +759,7 @@ export default async function handler(req) {
     const url = new URL(req.url);
     const path = url.pathname.replace(/^\/(\.netlify\/functions\/api|api)/, '') || '/';
     const m = req.method;
+    await push.noteOrigin(url.origin);
     const body = async () => (await req.json().catch(() => ({})));
 
     if (m === 'GET' && path === '/status') return await status();

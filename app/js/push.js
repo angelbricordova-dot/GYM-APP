@@ -84,4 +84,7 @@ export async function disablePush() {
 }
 
 export const setPrefs = async (prefs) => { const r = await S.request('POST', '/push/prefs', prefs); if (r.ok) await S.syncNow(); return r; };
-export const sendTest = () => S.request('POST', '/push/test');
+/** Prueba de notificación. Con `delay` (segundos) el servidor espera antes de enviar: da tiempo de cerrar la app o bloquear el teléfono. */
+export const sendTest = (delay = 0) => S.request('POST', '/push/test', { delay });
+/** Qué servicio de avisos usa este teléfono (según la dirección de su suscripción). */
+export const serviceOf = (endpoint = '') => (/apple\.com/.test(endpoint) ? 'Apple (iPhone)' : /googleapis|google\.com/.test(endpoint) ? 'Google (Android/Chrome)' : /mozilla/.test(endpoint) ? 'Firefox' : /windows/.test(endpoint) ? 'Microsoft' : endpoint ? 'otro' : '—');

@@ -10,9 +10,9 @@ const { default: api, _push, runReminders } = await import('../server/handler.mj
 // El envío real (Apple/Google) se reemplaza: aquí solo importa QUÉ se manda y A QUIÉN.
 const sent = [];
 let failWith = null;
-_push.send = async (sub, payload) => {
+_push.send = async (sub, payload, opts) => {
   if (failWith) throw Object.assign(new Error('gone'), { statusCode: failWith });
-  sent.push({ endpoint: sub.endpoint, ...JSON.parse(payload) });
+  sent.push({ endpoint: sub.endpoint, ...JSON.parse(payload), opts });
 };
 
 const call = async (method, path, { token, body, raw, type } = {}) => {
@@ -114,6 +114,24 @@ test('push: los fallos ya no son invisibles (error en Perfil, aviso en la prueba
   await call('POST', '/push/unsubscribe', { token: A.token, body: { endpoint: sub('A9').endpoint } });
   const swapped = (await call('GET', '/sync', { token: B.token })).data.partnerPush; // A ya sin dispositivos suscritos
   assert.equal(typeof swapped, 'boolean');
+});
+
+test('push: prueba con retraso, urgencia según el servicio (Apple normal, Google alta) y tags únicos', async () => {
+  const apple = { endpoint: 'https://web.push.apple.com/Qabc', keys: { p256dh: 'BPkapple', auth: 'auapple' } };
+  await call('POST', '/push/subscribe', { token: A.token, body: { subscription: apple } });
+  const t0 = Date.now();
+  assert.equal((await call('POST', '/push/test', { token: A.token, body: { delay: 1 } })).status, 200);
+  assert.ok(Date.now() - t0 >= 900, 'esperó antes de enviar');
+  const mine = sent.filter((x) => x.title === 'Lindwyrm').slice(-2);
+  const byHost = Object.fromEntries(mine.map((x) => [new URL(x.endpoint).host, x.opts.urgency]));
+  assert.equal(byHost['web.push.apple.com'], 'normal');
+  assert.ok(Object.values(byHost).some((u) => u === 'high')); // el otro dispositivo (Google u otro) sí
+  assert.match(mine[0].opts.vapidDetails.subject, /^(https:\/\/|mailto:)/); // el “sub” de VAPID es válido para Apple
+  await call('POST', '/messages', { token: B.token, body: { text: 'uno', kind: 'text' } });
+  await call('POST', '/messages', { token: B.token, body: { text: 'dos', kind: 'text' } });
+  const tags = sent.filter((x) => x.title === '💌 Nota de Angélica' && x.endpoint === 'https://push.example/A1').map((x) => x.tag);
+  assert.equal(new Set(tags).size, tags.length); // dos notas seguidas no se reemplazan
+  await call('POST', '/push/unsubscribe', { token: A.token, body: { endpoint: apple.endpoint } });
 });
 
 test('recordatorio diario: a la hora local, una vez, solo si no entrenó', async () => {

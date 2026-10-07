@@ -2,6 +2,7 @@ import { html, render } from '../vendor/preact-htm.js';
 import * as S from './store.js';
 import { App } from './ui/app.js';
 import { goTab } from './ui/nav.js';
+import { unlockAudio } from './theme.js';
 
 const TABS = ['today', 'train', 'progress', 'together', 'rewards'];
 
@@ -13,6 +14,8 @@ if (joinCode) {
 }
 
 render(html`<${App} />`, document.getElementById('root'));
+// el primer toque “despierta” el audio (iOS lo exige) y deja listo el sonido del corazón
+addEventListener('pointerdown', () => unlockAudio(), { once: true, capture: true });
 S.startSyncLoop(); // sin sesión no hace nada; al iniciar sesión ya está activo
 
 // Al abrir desde una notificación (?tab=together) o si la app ya estaba abierta (mensaje del service worker).

@@ -22,7 +22,19 @@ export function createPush(db) {
     return meta.vapid;
   }
   // Apple exige un “sub” válido: https del sitio (Netlify define URL) o mailto.
-  const subject = () => process.env.VAPID_SUBJECT || process.env.URL || 'mailto:soporte@lindwyrm.app';
+  // El sitio real (https) se aprende de las peticiones que llegan: en Netlify la variable URL no siempre existe al ejecutar la función.
+  let origin = null;
+  const noteOrigin = async (o) => {
+    if (!o || !o.startsWith('https://') || o === origin) return;
+    origin = o;
+    try { const cur = await db.get('site'); if (cur?.origin !== o) await db.set('site', { origin: o }); } catch { /* no es crítico */ }
+  };
+  const subject = async () => {
+    if (process.env.VAPID_SUBJECT) return process.env.VAPID_SUBJECT;
+    if (origin) return origin;
+    try { const cur = await db.get('site'); if (cur?.origin) return cur.origin; } catch { /* sigue */ }
+    return process.env.URL || 'mailto:soporte@lindwyrm.app';
+  };
 
   const publicKey = async () => (await keys()).publicKey;
 
@@ -62,9 +74,11 @@ export function createPush(db) {
       const k = await keys();
       // el tag es único por aviso: dos notas seguidas se ven las dos
       const payload = JSON.stringify({ title: msg.title, body: msg.body || '', url: msg.url || '/', tag: msg.tag || `${msg.type || 'lindwyrm'}-${Date.now().toString(36)}`, icon: '/icons/icon-192.png', badge: '/icons/icon-192.png' });
-      const opts = { vapidDetails: { subject: subject(), publicKey: k.publicKey, privateKey: k.privateKey }, TTL: 86_400, urgency: 'high', timeout: TIMEOUT_MS };
+      const vapidDetails = { subject: await subject(), publicKey: k.publicKey, privateKey: k.privateKey };
       const results = await Promise.all(user.push.map(async (sub) => {
         try {
+          // Apple no usa la urgencia: se deja en “normal”; en Android (Google) “high” despierta el teléfono
+          const opts = { vapidDetails, TTL: 86_400, urgency: /apple\.com/.test(sub.endpoint) ? 'normal' : 'high', timeout: TIMEOUT_MS };
           await withTimeout(_push.send(sub, payload, opts), TIMEOUT_MS + 500);
           return { sub, ok: true };
         } catch (e) {
@@ -110,5 +124,5 @@ export function createPush(db) {
     return { sent };
   }
 
-  return { publicKey, subscribe, unsubscribe, setPrefs, notify, runReminders };
+  return { publicKey, subscribe, unsubscribe, setPrefs, notify, runReminders, noteOrigin };
 }

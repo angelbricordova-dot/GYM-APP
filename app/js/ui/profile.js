@@ -3,7 +3,7 @@ import * as S from '../store.js';
 import * as L from '../logic.js';
 import { getTheme, setTheme, accentVars, soundOn, setSoundOn, playLike } from '../theme.js';
 import { Icon, Sheet, Avatar, Stepper, Field, Segmented, toast, cx } from './kit.js';
-import { pushSupport, currentSubscription, enablePush, disablePush, repairPush, setPrefs, sendTest } from '../push.js';
+import { pushSupport, currentSubscription, enablePush, disablePush, repairPush, setPrefs, sendTest, serviceOf } from '../push.js';
 import { GoogleButton } from './google-button.js';
 import { AvatarCropper } from './cropper.js';
 import { JoinOtherSheet } from './link.js';
@@ -178,7 +178,8 @@ function Notifications({ acc }) {
   const prefs = acc.push?.prefs || { challenges: true, notes: true, workouts: true, routines: true, prizes: true, reminder: false, reminderHour: 18 };
   const [on, setOn] = useState(null); // este teléfono está suscrito
   const [busy, setBusy] = useState(false);
-  useEffect(() => { currentSubscription().then((s) => setOn(!!s && Notification.permission === 'granted')).catch(() => setOn(false)); }, []);
+  const [svc, setSvc] = useState('');
+  useEffect(() => { currentSubscription().then((s) => { setOn(!!s && Notification.permission === 'granted'); setSvc(serviceOf(s?.endpoint)); }).catch(() => setOn(false)); }, []);
 
   if (sup.needsInstall) {
     return html`<div class="group pad"><b>Instala la app para recibir avisos</b>
@@ -197,7 +198,13 @@ function Notifications({ acc }) {
     } else await disablePush();
     setBusy(false);
   };
-  const test = async () => { const r = await sendTest(); toast(r.ok ? 'Enviada: debería llegarte en segundos' : r.data.error, { icon: r.ok ? '🔔' : '⚠️', ms: r.ok ? undefined : 7000 }); };
+  // La prueba llega 5 s después: así da tiempo de CERRAR la app o bloquear el teléfono, que es cuando se ve el aviso de verdad
+  // (en iPhone, con la app abierta el aviso no sale como banner; para eso están los avisos de arriba dentro de la app).
+  const test = async () => {
+    toast('Ahora cierra la app o bloquea el teléfono', { icon: '🔔', body: 'La notificación de prueba llega en 5 segundos', ms: 5500 });
+    const r = await sendTest(5);
+    if (!r.ok) toast(r.data.error, { icon: '⚠️', ms: 8000 });
+  };
   const repair = async () => {
     setBusy(true);
     const r = await repairPush();
@@ -215,7 +222,8 @@ function Notifications({ acc }) {
       ${KINDS.map(([k, title, sub]) => html`<label class="row switch-row"><div class="grow"><b>${title}</b><small class="muted">${sub}</small></div><input type="checkbox" checked=${prefs[k]} onChange=${(e) => setPrefs({ [k]: e.target.checked })} /></label>`)}
       <label class="row switch-row"><div class="grow"><b>Recordatorio diario</b><small class="muted">Si aún no entrenaste, te aviso a esta hora</small></div><input type="checkbox" checked=${prefs.reminder} onChange=${(e) => setPrefs({ reminder: e.target.checked })} /></label>
       ${prefs.reminder && html`<div class="row static"><div class="grow"><b>Hora del recordatorio</b><small class="muted">${String(hour).padStart(2, '0')}:00 (hora de tu teléfono)</small></div><${Stepper} value=${hour} onChange=${(v) => setPrefs({ reminderHour: Math.max(0, Math.min(23, Math.round(L.num(v)))) })} label="Hora" /></div>`}
-      <button class="row" onClick=${test}><span class="lead"><${Icon} name="send" size=${18} /></span><div class="grow"><b>Enviar una notificación de prueba</b><small class="muted">${devices} ${devices === 1 ? 'dispositivo registrado' : 'dispositivos registrados'}</small></div></button>
+      <button class="row" onClick=${test}><span class="lead"><${Icon} name="send" size=${18} /></span><div class="grow"><b>Enviar una notificación de prueba</b><small class="muted">Llega en 5 s: cierra la app o bloquea el teléfono · ${devices} ${devices === 1 ? 'dispositivo registrado' : 'dispositivos registrados'}</small></div></button>
+      <div class="row static"><span class="lead"><${Icon} name="info" size=${18} /></span><div class="grow"><b>Diagnóstico</b><small class="muted">Servicio: ${svc || '—'} · Permiso: ${sup.permission === 'granted' ? 'concedido' : sup.permission} · App instalada: ${sup.standalone ? 'sí' : 'no'}</small></div></div>
       ${(perr || devices === 0) && html`<div class="row static"><span class="lead tint-rose">⚠️</span><div class="grow"><b>${devices === 0 ? 'Este teléfono no está registrado' : 'El último aviso no se pudo entregar'}</b><small class="muted">${perr ? `El servicio de avisos respondió ${perr.status || 'sin respuesta'}${perr.msg ? ` (${perr.msg})` : ''}. ` : ''}Toca “Reparar” para registrarlo de nuevo.</small></div></div>`}
       <button class="row" onClick=${repair} disabled=${busy}><span class="lead"><${Icon} name="repeat" size=${18} /></span><div class="grow"><b>Reparar notificaciones</b><small class="muted">Vuelve a registrar este teléfono si dejaron de llegar</small></div></button>`}
   </div>`;

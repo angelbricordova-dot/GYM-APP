@@ -97,11 +97,41 @@ export function playPing() {
   } catch { /* sin audio */ }
 }
 
-export function playLike() {
+/** El AudioContext se crea con el primer toque (iOS exige un gesto) y de una vez se descarga el sonido del like. */
+export function unlockAudio() {
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === 'suspended') audio.resume();
+    loadLike(audio);
+  } catch { /* sin audio */ }
+}
+
+// El sonido del like es el archivo /sounds/like.mp3 (tiene silencio al inicio: se recorta al primer sonido audible y se sube de volumen).
+let likeSample = null;
+let likeLoading = null;
+function loadLike(ctx) {
+  if (likeSample) return Promise.resolve(likeSample);
+  likeLoading = likeLoading || fetch('/sounds/like.mp3').then((r) => r.arrayBuffer()).then((ab) => ctx.decodeAudioData(ab)).then((buf) => {
+    const d = buf.getChannelData(0);
+    let first = 0, peak = 0;
+    for (let i = 0; i < d.length; i++) peak = Math.max(peak, Math.abs(d[i]));
+    for (let i = 0; i < d.length; i++) if (Math.abs(d[i]) > peak * 0.04) { first = i / buf.sampleRate; break; }
+    likeSample = { buf, start: Math.max(0, first - 0.01), gain: Math.min(3, 0.55 / (peak || 1)) };
+    return likeSample;
+  }).catch(() => null);
+  return likeLoading;
+}
+
+export async function playLike() {
   if (!soundOn()) return;
   try {
     audio = audio || new (window.AudioContext || window.webkitAudioContext)();
     if (audio.state === 'suspended') audio.resume();
-    likeSound(audio, audio.destination, audio.currentTime + 0.01);
+    const s = await loadLike(audio);
+    if (!s) return likeSound(audio, audio.destination, audio.currentTime + 0.01); // sin el archivo: campanita sintetizada
+    const src = audio.createBufferSource(), g = audio.createGain();
+    src.buffer = s.buf; g.gain.value = s.gain;
+    src.connect(g); g.connect(audio.destination);
+    src.start(0, s.start);
   } catch { /* sin audio */ }
 }
