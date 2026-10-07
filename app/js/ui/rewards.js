@@ -12,7 +12,8 @@ const IDEAS = [
 export function Rewards() {
   const me = S.state.me;
   const partner = S.state.partner;
-  const [tab, setTab] = useState('prizes');
+  const todo = pendingCount();
+  const [tab, setTab] = useState(todo.act > 0 ? 'pending' : 'prizes');
   const [propose, setPropose] = useState(false);
   const [gift, setGift] = useState(false);
   const pending = S.state.proposals.filter((p) => p.status === 'pending' && p.lastBy !== S.state.auth.uid); // las que esperan en la pestaña Ideas
@@ -31,8 +32,9 @@ export function Rewards() {
     </section>
 
     ${partner && bal > 0 && html`<button class="btn tinted block gift-btn" onClick=${() => setGift(true)}>💝 Regalar puntos a ${partner.name}</button>`}
-    <${Segmented} value=${tab} onChange=${setTab} options=${[{ id: 'prizes', label: 'Premios' }, { id: 'ideas', label: 'Ideas', badge: pending.length || null }, { id: 'history', label: 'Historial' }]} />
-    ${tab === 'prizes' && html`<${Prizes} active=${active} bal=${bal} me=${me} partner=${partner} onIdeas=${() => setTab('ideas')} />`}
+    <${Segmented} value=${tab} onChange=${setTab} options=${[{ id: 'prizes', label: 'Premios' }, { id: 'pending', label: 'Pendientes', badge: todo.total || null }, { id: 'ideas', label: 'Ideas', badge: pending.length || null }, { id: 'history', label: 'Historial' }]} />
+    ${tab === 'prizes' && html`<${Prizes} active=${active} bal=${bal} me=${me} partner=${partner} onIdeas=${() => setTab('ideas')} onPending=${() => setTab('pending')} />`}
+    ${tab === 'pending' && html`<${Pending} partner=${partner} onPrizes=${() => setTab('prizes')} />`}
     ${tab === 'ideas' && html`<${Ideas} me=${me} partner=${partner} onPropose=${() => setPropose(true)} />`}
     ${tab === 'history' && html`<${History} me=${me} />`}
     ${propose && html`<${ProposeSheet} onClose=${() => setPropose(false)} />`}
@@ -40,30 +42,35 @@ export function Rewards() {
   </div>`;
 }
 
+/** Cuántos pendientes hay en total (para la etiqueta) y cuántos requieren algo de mí ahora. */
+function pendingCount() {
+  const uid = S.state.auth.uid;
+  const fulfil = S.vouchersToFulfill();
+  const mine = S.state.vouchers.filter((v) => v.by === uid && ['open', 'claimed'].includes(v.status));
+  const changes = S.priceChangesForMe().length;
+  return { total: fulfil.length + mine.length + changes, act: fulfil.filter((v) => v.status === 'open').length + mine.filter((v) => v.status === 'claimed').length + changes };
+}
+
 const who = (id, partner) => (id === S.state.auth.uid ? 'Tú' : partner?.name || 'Tu pareja');
 
-function Prizes({ active, bal, me, partner, onIdeas }) {
+const priceAct = async (p, action, cost) => {
+  const r = await S.decide(p.id, action, cost);
+  if (!r.ok) return toast(r.data.error, { icon: '⚠️' });
+  toast({ change: 'Propuesta enviada: tu pareja decide', 'accept-change': `Listo: ahora cuesta ${r.data.proposal.cost} puntos`, 'decline-change': 'Se queda con el precio actual', 'cancel-change': 'Cambio cancelado' }[action], { icon: action === 'accept-change' ? '✅' : '💱' });
+};
+
+/** Todo lo que está por cumplir, confirmar o decidir, aparte de los premios para canjear. */
+function Pending({ partner, onPrizes }) {
   const uid = S.state.auth.uid;
-  const [celebrate, setCelebrate] = useState(false);
-  const [change, setChange] = useState(null); // premio al que le cambio el precio
-  const price = async (p, action, cost) => {
-    const r = await S.decide(p.id, action, cost);
-    if (!r.ok) return toast(r.data.error, { icon: '⚠️' });
-    toast({ change: 'Propuesta enviada: tu pareja decide', 'accept-change': `Listo: ahora cuesta ${r.data.proposal.cost} puntos`, 'decline-change': 'Se queda con el precio actual', 'cancel-change': 'Cambio cancelado' }[action], { icon: action === 'accept-change' ? '✅' : '💱' });
-  };
+  const price = priceAct;
   const toFulfill = S.vouchersToFulfill(); // los que mi pareja canjeó y me toca cumplir
   const mineOpen = S.state.vouchers.filter((v) => v.by === uid && ['open', 'claimed'].includes(v.status)).sort((a, b) => (b.status === 'claimed') - (a.status === 'claimed'));
   const act = async (v, action, ok) => { const r = await S.voucherAction(v.id, action); toast(r.ok ? ok : r.data.error, { icon: r.ok ? '✅' : '⚠️' }); };
   const deny = (v) => { if (confirm(`Si de verdad NO lo hizo, ${partner?.name || 'tu pareja'} pierde ${L.LIE_PENALTY} puntos de amor por decir que sí. El premio sigue pendiente. ¿Confirmas?`)) act(v, 'deny', `Anotado: ${partner?.name || 'tu pareja'} pierde ${L.LIE_PENALTY} puntos y el premio sigue pendiente`); };
   const claim = (v) => { if (confirm(`¿De verdad ya cumpliste “${v.name}”? ${partner?.name || 'Tu pareja'} tendrá que confirmarlo.`)) act(v, 'claim', 'Listo: ahora ' + (partner?.name || 'tu pareja') + ' lo confirma'); };
-  const redeem = async (p) => {
-    if (!confirm(`¿Canjear “${p.name}” por ${p.cost} puntos de amor?`)) return;
-    const r = await S.redeem(p);
-    if (r.ok) { setCelebrate(true); setTimeout(() => setCelebrate(false), 1800); toast(`${p.emoji} ¡A disfrutarlo!`); }
-    else toast(r.data.error, { icon: '⚠️' });
-  };
+  const changes = S.priceChangesForMe();
+  const empty = !toFulfill.length && !mineOpen.length && !changes.length;
   return html`<div class="stack-lg">
-    ${celebrate && html`<${Confetti} n=${36} />`}
     ${toFulfill.length > 0 && html`<section class="card rise attn"><h2>Premios pendientes por cumplir</h2>
       <p class="muted small">${partner?.name || 'Tu pareja'} los canjeó con sus puntos. Cuando los cumplas, toca “Lo hice”: ${partner?.name || 'tu pareja'} tiene que confirmar que sí fue verdad.</p>
       ${toFulfill.map((v) => html`<div class="fulfil"><div class="reward"><span class="emoji">${v.emoji}</span><div class="grow"><b>${v.name}</b><small class="muted">Canjeado por ${who(v.by, partner)} · ${fmtDay(L.ymd(new Date(v.ts)))}</small></div></div>
@@ -80,10 +87,28 @@ function Prizes({ active, bal, me, partner, onIdeas }) {
         : html`<div class="price-box pending slim"><span class="pb-ic">⏳</span><div class="grow"><b>Esperando que ${partner?.name || 'tu pareja'} lo cumpla</b></div></div>
            <button class="btn sm tinted block" onClick=${() => act(v, 'confirm', '¡Premio cumplido! 🎉')}>Ya me lo cumplió</button>`}
     </div>`)}</section>`}
-    ${S.priceChangesForMe().length > 0 && html`<section class="card rise attn"><h2>Cambio de precio</h2>${S.priceChangesForMe().map((p) => html`<div class="idea">
+    ${changes.length > 0 && html`<section class="card rise attn"><h2>Cambio de precio</h2>${changes.map((p) => html`<div class="idea">
       <div class="idea-top"><span class="emoji">${p.emoji}</span><div class="grow"><b>${p.name}</b><small class="muted">${who(p.change.by, partner)} quiere cambiar el precio: <${Points} n=${p.cost} size=${13} /> → <${Points} n=${p.change.cost} size=${13} /></small></div></div>
       <div class="idea-actions"><button class="btn sm primary" onClick=${() => price(p, 'accept-change')}>Aceptar ${p.change.cost}</button><button class="btn sm ghost" onClick=${() => price(p, 'decline-change')}>Dejarlo en ${p.cost}</button></div>
     </div>`)}</section>`}
+    ${empty && html`<${Empty} icon="✅" title="Nada pendiente" text="Aquí se juntan los premios que hay que cumplir o confirmar, y los cambios de precio por decidir." action=${html`<button class="btn primary" onClick=${onPrizes}>Ver premios</button>`} />`}
+  </div>`;
+}
+
+function Prizes({ active, bal, me, partner, onIdeas, onPending }) {
+  const uid = S.state.auth.uid;
+  const [celebrate, setCelebrate] = useState(false);
+  const [change, setChange] = useState(null); // premio al que le cambio el precio
+  const price = priceAct;
+  const redeem = async (p) => {
+    if (!confirm(`¿Canjear “${p.name}” por ${p.cost} puntos de amor?`)) return;
+    const r = await S.redeem(p);
+    if (r.ok) { setCelebrate(true); setTimeout(() => setCelebrate(false), 1800); toast(`${p.emoji} ¡A disfrutarlo!`); }
+    else toast(r.data.error, { icon: '⚠️' });
+  };
+  return html`<div class="stack-lg">
+    ${celebrate && html`<${Confetti} n=${36} />`}
+    ${pendingCount().total > 0 && html`<button class="price-box ask pend-link" onClick=${onPending}><span class="pb-ic">⏳</span><div class="grow"><b>${pendingCount().total === 1 ? '1 pendiente' : `${pendingCount().total} pendientes`}</b><small>Premios por cumplir o confirmar</small></div><${Icon} name="right" size=${16} class="chev" /></button>`}
     <section class="card rise" style="--i:1">
       <h2>Canjear</h2>
       ${active.length ? active.map((p) => html`<div class="reward-wrap"><div class="reward">
