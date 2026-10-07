@@ -31,6 +31,7 @@ export function Profile() {
 
   const [danger, setDanger] = useState(null); // 'reset' | 'delete' | 'leave'
   const [joinOther, setJoinOther] = useState(false);
+  const [hist, setHist] = useState(false);
   const [sound, setSound] = useState(soundOn());
 
   const link = async (credential) => {
@@ -96,6 +97,12 @@ export function Profile() {
         <button class="row" onClick=${downloadData}><span class="lead"><${Icon} name="copy" size=${18} /></span><div class="grow"><b>Descargar mis datos</b></div></button>
         <button class="row danger" onClick=${() => { if (confirm('¿Cerrar sesión en este teléfono? Tus datos siguen guardados en la nube.')) { closeScreen(); S.logout(); } }}><span class="lead"><${Icon} name="logout" size=${18} /></span><div class="grow"><b>Cerrar sesión</b></div></button>
       </div>
+      <h3 class="sec-h">Historial</h3>
+      <div class="group">
+        <button class="row" onClick=${() => setHist(true)}><span class="lead"><${Icon} name="trash" size=${18} /></span><div class="grow"><b>Borrar historial…</b><small class="muted">Retos terminados, notas, premios viejos y rutinas vistas</small></div><${Icon} name="right" size=${16} class="chev" /></button>
+      </div>
+      ${hist && html`<${HistorySheet} onClose=${() => setHist(false)} />`}
+
       <h3 class="sec-h">Pareja</h3>
       <div class="group">
         ${S.state.partner
@@ -244,6 +251,34 @@ function Notifications({ acc }) {
       ${(perr || devices === 0) && html`<div class="row static"><span class="lead tint-rose">⚠️</span><div class="grow"><b>${devices === 0 ? 'Este teléfono no está registrado' : 'El último aviso no se pudo entregar'}</b><small class="muted">${perr ? `El servicio de avisos respondió ${perr.status || 'sin respuesta'}${perr.msg ? ` (${perr.msg})` : ''}. ` : ''}Toca “Reparar” para registrarlo de nuevo.</small></div></div>`}
       <button class="row" onClick=${repair} disabled=${busy}><span class="lead"><${Icon} name="repeat" size=${18} /></span><div class="grow"><b>Reparar notificaciones</b><small class="muted">Vuelve a registrar este teléfono si dejaron de llegar</small></div></button>`}
   </div>`;
+}
+
+// ============ borrar historial ============
+function HistorySheet({ onClose }) {
+  const c = S.historyCounts();
+  const rows = [
+    ['challenges', '🎯 Retos terminados', 'Cumplidos y cancelados, con sus fotos y videos', c.challenges],
+    ['prizes', '🎁 Premios viejos', 'Cupones ya cumplidos e ideas rechazadas', c.prizes],
+    ['notes', '💌 Tablero de motivación', 'Notas, corazones y reacciones', c.notes],
+    ['routines', '🏋️ Rutinas recomendadas', 'Las que ya viste, guardaste o descartaste', c.routines],
+  ];
+  const [pick, setPick] = useState(() => Object.fromEntries(rows.map(([k, , , n]) => [k, n > 0])));
+  const [busy, setBusy] = useState(false);
+  const chosen = rows.filter(([k]) => pick[k]).map(([k]) => k);
+  const go = async () => {
+    setBusy(true);
+    const r = await S.clearHistory(chosen);
+    setBusy(false);
+    if (!r.ok) return toast(r.data.error || 'No se pudo borrar. Revisa tu conexión.', { icon: '⚠️' });
+    toast('Historial borrado', { icon: '🧹' });
+    onClose();
+  };
+  return html`<${Sheet} title="Borrar historial" onClose=${onClose}>
+    <div class="danger-box"><b>Se borra para los dos.</b> Los puntos de amor que ya ganaron o perdieron se conservan, y lo que sigue activo (retos por hacer, premios aceptados) no se toca.</div>
+    <div class="group">${rows.map(([k, title, sub, n]) => html`<label class="row switch-row"><div class="grow"><b>${title}</b><small class="muted">${sub} · ${n}</small></div><input type="checkbox" checked=${!!pick[k]} disabled=${n === 0} onChange=${(e) => setPick({ ...pick, [k]: e.target.checked })} /></label>`)}</div>
+    <button class="btn danger-fill block lg" disabled=${busy || chosen.length === 0} onClick=${go}>${busy ? 'Borrando…' : 'Borrar lo elegido'}</button>
+    <button class="link" onClick=${onClose}>Cancelar</button>
+  <//>`;
 }
 
 // ============ reiniciar y eliminar ============

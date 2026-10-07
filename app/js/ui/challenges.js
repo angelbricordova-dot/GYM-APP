@@ -304,7 +304,13 @@ export function ChallengesPanel() {
   const active = (c) => ['open', 'started', 'submitted', 'rejected'].includes(c.status);
   const forMe = all.filter((c) => c.to === me && active(c));
   const sent = all.filter((c) => c.from === me && active(c));
-  const done = all.filter((c) => !active(c)).slice(0, 12);
+  const finished = all.filter((c) => !active(c));
+  const done = finished.slice(0, 12);
+  const wipe = async () => {
+    if (!confirm(`¿Borrar el historial de retos (${finished.length})? Se borra para los dos, junto con sus fotos y videos. Los puntos de amor que ya ganaron se conservan.`)) return;
+    const r = await S.clearHistory(['challenges']);
+    toast(r.ok ? 'Historial de retos borrado' : r.data.error, { icon: r.ok ? '🧹' : '⚠️' });
+  };
 
   return html`<div class="stack-lg">
     ${S.state.partner
@@ -313,7 +319,7 @@ export function ChallengesPanel() {
     ${forMe.length > 0 && html`<section><h3 class="sec-h">Para ti</h3>${forMe.map((c) => html`<${ChallengeCard} key=${c.id} c=${c} />`)}</section>`}
     ${sent.length > 0 && html`<section><h3 class="sec-h">Los que pusiste</h3>${sent.map((c) => html`<${ChallengeCard} key=${c.id} c=${c} />`)}</section>`}
     ${forMe.length + sent.length === 0 && html`<${Empty} icon="🎯" title="Sin retos por ahora" text="Pónganse retos del día: 10 flexiones, plancha, una caminata… Quien lo cumple y lo demuestra gana puntos de amor." />`}
-    ${done.length > 0 && html`<section><h3 class="sec-h">Historial</h3>${done.map((c) => html`<${ChallengeCard} key=${c.id} c=${c} compact />`)}</section>`}
+    ${done.length > 0 && html`<section><div class="row-between"><h3 class="sec-h">Historial</h3><button class="link danger" onClick=${wipe}><${Icon} name="trash" size=${14} /> Borrar historial</button></div>${done.map((c) => html`<${ChallengeCard} key=${c.id} c=${c} compact />`)}</section>`}
     ${creating && html`<${NewChallengeSheet} onClose=${() => setCreating(false)} />`}
   </div>`;
 }

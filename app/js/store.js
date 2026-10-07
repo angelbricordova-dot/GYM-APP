@@ -442,6 +442,23 @@ export async function resetProgress() {
   return res;
 }
 
+/** Cuánto historial hay para borrar (lo que muestra la hoja de “Borrar historial”). */
+export function historyCounts() {
+  return {
+    challenges: state.challenges.filter((c) => ['approved', 'cancelled'].includes(c.status)).length,
+    prizes: state.vouchers.filter((v) => v.status === 'done').length + state.proposals.filter((p) => p.status === 'declined').length,
+    notes: state.messages.filter((m) => m.kind !== 'skip' || m.penalty).length,
+    routines: state.routines.filter((r) => r.status !== 'new').length,
+  };
+}
+/** Borra historial compartido (retos terminados, cupones cumplidos e ideas rechazadas, notas, rutinas vistas). Los puntos ya ganados se conservan. */
+export async function clearHistory(kinds) {
+  await syncNow(); // primero subo mis cambios para que no se pisen con los puntos que fija el servidor
+  const res = await call('POST', '/history/clear', { kinds });
+  if (res.ok) await syncNow();
+  return res;
+}
+
 /** Salir de la vinculación con mi pareja (queda mi progreso; lo compartido se borra). */
 export async function leavePartner() {
   await syncNow(); // primero subo mis cambios para que no se pisen

@@ -86,6 +86,10 @@ No necesitas configurar nada: las llaves (VAPID) se generan solas la primera vez
 - **Con la app abierta** no hace falta push: se revisa cada 15 s y aparece un aviso arriba (toca para ir a la pantalla; se quita deslizándolo hacia arriba) con un sonidito suave.
 - **Si no llegan**: en *Perfil → Notificaciones* ves cuántos teléfonos tienes registrados y el último error del servicio de avisos (con su código). *Reparar notificaciones* crea el registro de nuevo (arregla llaves viejas). Quien envía ve “aún no tiene las notificaciones activadas” si su pareja no tiene ningún teléfono registrado. En el panel de Netlify, *Logs → Functions → api* muestra `push falló:` con el motivo.
 
+## Borrar historial
+
+*Juntos → Retos → Historial → Borrar historial*, o *Perfil → Historial → Borrar historial…* (con casillas): retos terminados (con sus fotos y videos), cupones cumplidos e ideas rechazadas, notas y reacciones del tablero, y rutinas recomendadas ya vistas. **Se borra para los dos.** Los puntos de amor ya ganados o perdidos se conservan (se fijan antes de borrar) y lo activo —retos por hacer, premios aceptados, “hoy no fui” sin decidir— no se toca. El historial de *Puntos → Movimientos* no se borra porque es lo que respalda tu saldo.
+
 ## Desvincularse y cambiar de pareja
 
 - **Perfil → Pareja → Desvincularme**: cualquiera de los dos puede salir (pide escribir DESVINCULAR). Cada quien **se queda con su cuenta, su progreso, sus fotos, su racha y los puntos de amor ya ganados** (los de retos y penalizaciones quedan fijados). Se borra lo compartido: notas del tablero, retos, premios y rutinas. Quien se queda recibe un **código nuevo** (el viejo ya no sirve) y quien sale recibe el suyo.

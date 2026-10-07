@@ -670,10 +670,12 @@ const SHARED = ['message/', 'proposal/', 'voucher/', 'challenge/', 'routine/'];
  * Fija como “banco” los puntos de amor ya ganados con retos de la pareja y las penalizaciones decididas,
  * para que no se pierdan al borrar lo compartido (las entradas con clave `bank:` no se recalculan).
  */
-function bankPoints(doc, items) {
+function bankPoints(doc, items, only = false) {
   doc.ledger = doc.ledger || [];
   const has = (k) => doc.ledger.some((e) => e.key === k || e.key === `bank:${k}`);
-  for (const e of doc.ledger) if (e.key && /^(challenge|skip):/.test(e.key)) e.key = `bank:${e.key}`;
+  // only: solo se fijan los puntos de lo que se va a borrar (borrar historial); si no, todo (desvincularse)
+  const mine = new Set([...items.challenge.map((c) => `challenge:${c.id}`), ...items.message.filter((m) => m.kind === 'skip' && m.ref?.date).map((m) => `skip:${m.ref.date}`)]);
+  for (const e of doc.ledger) if (e.key && /^(challenge|skip):/.test(e.key) && (!only || mine.has(e.key))) e.key = `bank:${e.key}`;
   const now = Date.now();
   for (const c of items.challenge) {
     if (c.status === 'approved' && c.to === doc.id && (c.approvedAt || 0) > (doc.resetAt || 0) && !has(`challenge:${c.id}`)) {
@@ -682,7 +684,7 @@ function bankPoints(doc, items) {
   }
   for (const m of items.message) {
     const d = m.ref?.date;
-    if (m.kind === 'skip' && m.from === doc.id && m.penalty && d && doc.skips?.[d] && !doc.checkins?.[d] && !has(`skip:${d}`)) {
+    if (m.kind === 'skip' && m.from === doc.id && m.penalty?.points > 0 && d && doc.skips?.[d] && !doc.checkins?.[d] && !has(`skip:${d}`)) {
       doc.ledger.push({ id: randomUUID(), ts: now, key: `bank:skip:${d}`, delta: -m.penalty.points, reason: `No fui: ${String(m.text).slice(0, 60)}`, date: d });
     }
   }
@@ -715,6 +717,41 @@ async function leaveMe(user) {
   await db.set('meta', meta);
   await push.notify(otherId, { title: `${first(user.name)} se desvinculó`, body: 'Ya puedes invitar a otra persona con tu nuevo enlace.', url: '/?tab=together' });
   return json(200, { ok: true, inviteCode: mine.inviteCode });
+}
+
+/**
+ * Borrar historial (de los dos: lo compartido es de los dos). Los puntos de amor ya ganados se conservan (se fijan antes de borrar).
+ * kinds: challenges (retos terminados), prizes (cupones cumplidos e ideas rechazadas), notes (tablero y reacciones), routines (recomendadas ya vistas).
+ */
+async function clearHistory(user, body) {
+  const kinds = new Set(Array.isArray(body.kinds) ? body.kinds : []);
+  if (![...kinds].some((k) => ['challenges', 'prizes', 'notes', 'routines'].includes(k))) return fail(400, 'Elige qué historial borrar.');
+  const meta = await getMeta();
+  const sp = spaceOf(meta, user.id);
+  if (!sp) return fail(409, 'No hay nada que borrar.');
+  const loadAll = async (prefix) => {
+    const out = [];
+    for (const k of await db.list(prefix)) { const x = await db.get(k); if (inSpace(x, sp)) out.push({ ...x, _key: k }); }
+    return out;
+  };
+  const del = { challenge: [], message: [], voucher: [], proposal: [], routine: [] };
+  if (kinds.has('challenges')) del.challenge = (await loadAll('challenge/')).filter((c) => ['approved', 'cancelled'].includes(c.status));
+  if (kinds.has('prizes')) {
+    del.voucher = (await loadAll('voucher/')).filter((v) => v.status === 'done');
+    del.proposal = (await loadAll('proposal/')).filter((p) => p.status === 'declined');
+  }
+  if (kinds.has('notes')) del.message = (await loadAll('message/')).filter((m) => m.kind !== 'skip' || m.penalty); // los “hoy no fui” sin decidir se quedan
+  if (kinds.has('routines')) del.routine = (await loadAll('routine/')).filter((r) => r.status !== 'new');
+  // puntos primero: lo que ya ganaron o perdieron no cambia
+  for (const uid of sp.users) {
+    const u = await db.get(`user/${uid}`);
+    if (!u) continue;
+    bankPoints(u.doc, del, true);
+    await db.set(`user/${uid}`, u);
+  }
+  for (const list of Object.values(del)) for (const x of list) await db.del(x._key);
+  for (const c of del.challenge) await db.del(`evidence/${c.id}`);
+  return json(200, { ok: true, deleted: Object.fromEntries(Object.entries(del).map(([k, v]) => [k, v.length])) });
 }
 
 /** Ya con cuenta y sin pareja: unirse al espacio de otra persona con su código (y la frase de aceptación). */
@@ -795,6 +832,7 @@ export default async function handler(req) {
     if (m === 'POST' && path === '/me/reset') return await resetMe(user);
     if (m === 'POST' && path === '/me/delete') return await deleteMe(user);
     if (m === 'POST' && path === '/me/leave') return await leaveMe(user);
+    if (m === 'POST' && path === '/history/clear') return await clearHistory(user, await body());
     if (m === 'POST' && path === '/me/join') return await joinOther(user, await body());
     if (m === 'POST' && path === '/routines') return await postRoutine(user, await body());
     if (m === 'POST' && (r = path.match(/^\/routines\/([^/]+)\/(seen|save|dismiss|delete)$/))) return await routineAction(user, r[1], r[2]);
