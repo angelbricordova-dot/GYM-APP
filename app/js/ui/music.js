@@ -9,7 +9,24 @@ const POS_KEY = 'gymduo.dock';
 const loadPos = () => { try { const p = JSON.parse(localStorage.getItem(POS_KEY)); return p && Number.isFinite(p.x) && Number.isFinite(p.y) ? p : null; } catch { return null; } };
 const player = { item: null, big: true, pos: loadPos() }; // `pos`: dónde dejaste el reproductor mini (null = esquina de abajo a la derecha)
 const MINI = { w: 128, h: 72 };
-const clampPos = (x, y) => ({ x: Math.max(4, Math.min(innerWidth - MINI.w - 4, x)), y: Math.max(4, Math.min(innerHeight - MINI.h - 4, y)) });
+/** Zonas del teléfono que no se pueden tocar (muesca, isla dinámica, barra de inicio). */
+function insets() {
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+  document.body.appendChild(el);
+  const c = getComputedStyle(el);
+  const v = { t: parseFloat(c.paddingTop) || 0, r: parseFloat(c.paddingRight) || 0, b: parseFloat(c.paddingBottom) || 0, l: parseFloat(c.paddingLeft) || 0 };
+  el.remove();
+  return v;
+}
+/** Siempre dentro de la parte tocable de la pantalla: nunca bajo la barra de estado ni fuera de los bordes. */
+const clampPos = (x, y) => {
+  const i = insets();
+  const W = document.documentElement.clientWidth || innerWidth;
+  const H = document.documentElement.clientHeight || innerHeight;
+  const m = 10;
+  return { x: Math.max(m + i.l, Math.min(W - MINI.w - m - i.r, x)), y: Math.max(i.t + m + 8, Math.min(H - MINI.h - m - i.b, y)) };
+};
 let drag = null;
 const dragStart = (e) => {
   const r = e.currentTarget.parentElement.getBoundingClientRect();
@@ -17,9 +34,12 @@ const dragStart = (e) => {
   e.currentTarget.setPointerCapture(e.pointerId);
 };
 const dragMove = (e) => { if (drag) { player.pos = clampPos(e.clientX - drag.dx, e.clientY - drag.dy); emit(); } };
+let lastTap = 0;
 const dragEnd = () => {
   if (!drag) return;
   drag = null;
+  if (Date.now() - lastTap < 350) { player.pos = null; emit(); try { localStorage.removeItem(POS_KEY); } catch { /* sin storage */ } return; } // doble toque: vuelve a la esquina
+  lastTap = Date.now();
   try { localStorage.setItem(POS_KEY, JSON.stringify(player.pos)); } catch { /* sin storage */ }
 }; // `big`: recién puesta suena grande para poder tocar ▶ si el teléfono no la arranca sola; se achica con “Minimizar”
 const listeners = new Set();
@@ -29,6 +49,8 @@ const usePlayer = () => {
   return player.item;
 };
 const emit = () => listeners.forEach((f) => f());
+addEventListener('resize', () => { if (player.item) emit(); });
+addEventListener('orientationchange', () => { if (player.item) emit(); });
 
 /** Reproduce un enlace o un elemento del historial dentro de la app y avisa a la pareja qué escuchas. */
 export async function playItem(item) {

@@ -950,3 +950,5 @@ button.mo-cell:disabled { opacity: 1; }
 .dock-grip { position: absolute; top: 0; left: 0; right: 34px; height: 26px; touch-action: none; cursor: grab; background: linear-gradient(rgba(0, 0, 0, .5), transparent); display: grid; place-items: start center; padding-top: 6px; }
 .dock-grip::after { content: ''; width: 34px; height: 4px; border-radius: 4px; background: rgba(255, 255, 255, .75); }
 .dock-grip:active { cursor: grabbing; }
+
+.dock-grip { height: 34px; }
