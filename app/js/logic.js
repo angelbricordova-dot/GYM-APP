@@ -458,7 +458,31 @@ export const routineItems = (r) => r.exercises.map((e) => (typeof e === 'string'
 export const GROUP_COLORS = { Pecho: '#ff5c93', Espalda: '#38bdf8', Pierna: '#34d6a0', Hombro: '#ff9f0a', Brazo: '#8b7cff', Core: '#ffd60a', Cardio: '#ff453a' };
 export function groupOf(name) {
   const k = keyOf(name);
-  return LIBRARY.find(([, list]) => list.some((x) => keyOf(x) === k))?.[0] || null;
+  return LIBRARY.find(([, list]) => list.some((x) => keyOf(x) === k))?.[0] || CUSTOM.find((c) => keyOf(c.name) === k)?.group || null;
+}
+
+// ---------- ejercicios propios: se guardan para siempre y los comparten las dos personas ----------
+let CUSTOM = [];
+/** Mis ejercicios nuevos + los de mi pareja (sin repetir, ni los que ya trae la biblioteca). */
+export function customExercises(me, partnerDoc) {
+  const seen = new Set(LIBRARY.flatMap(([, l]) => l.map(keyOf)));
+  const out = [];
+  for (const [doc, own] of [[me, true], [partnerDoc, false]]) {
+    for (const c of doc?.customExercises || []) {
+      const k = keyOf(String(c?.name || ''));
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      out.push({ name: String(c.name), group: LIBRARY.some(([g]) => g === c.group) ? c.group : null, own });
+    }
+  }
+  return out;
+}
+export const setCustomExercises = (list) => { CUSTOM = list; };
+/** La biblioteca con los ejercicios propios metidos en su grupo (los que no tienen grupo van en “Míos”). */
+export function libraryWithCustom() {
+  const lib = LIBRARY.map(([g, names]) => [g, [...names, ...CUSTOM.filter((c) => c.group === g).map((c) => c.name)]]);
+  const loose = CUSTOM.filter((c) => !c.group).map((c) => c.name);
+  return loose.length ? [...lib, ['Míos', loose]] : lib;
 }
 
 // ---------- plantillas para empezar rápido ----------

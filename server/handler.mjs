@@ -108,7 +108,7 @@ async function allUsers() {
 // ---------- documentos ----------
 const emptyDoc = (id, name, extra = {}) => ({
   v: 2, id, name, color: extra.color || '#8b7cff', avatar: null, heightCm: null, weeklyGoal: 3,
-  restDays: 2, shareWeight: false, weights: [], sessions: [], checkins: {}, pauses: [], ledger: [], routines: [],
+  restDays: 2, shareWeight: false, weights: [], sessions: [], checkins: {}, pauses: [], ledger: [], routines: [], customExercises: [],
   createdAt: Date.now(), updatedAt: Date.now(),
 });
 
@@ -365,6 +365,8 @@ async function putMe(user, req) {
   if ((doc.updatedAt || 0) < user.doc.updatedAt) return json(409, { error: 'Hay datos más nuevos en otro dispositivo.', doc: user.doc });
   doc.id = user.id;
   doc.name = clean(doc.name, 20) || user.name;
+  const groups = L.LIBRARY.map(([g]) => g);
+  doc.customExercises = (Array.isArray(doc.customExercises) ? doc.customExercises : []).slice(0, 300).map((c) => ({ name: clean(c?.name, 40), group: groups.includes(c?.group) ? c.group : null })).filter((c) => c.name);
   if (typeof doc.tz !== 'string' || doc.tz.length > 60) doc.tz = user.doc.tz || 'UTC';
   const before = new Set(Object.keys(user.doc.checkins || {}));
   const added = Object.keys(doc.checkins || {}).filter((d) => !before.has(d));
@@ -714,7 +716,7 @@ async function resetMe(user) {
   const now = Date.now();
   user.doc = {
     ...emptyDoc(user.id, user.name, { color: d.color }),
-    avatar: d.avatar, supps: d.supps, heightCm: d.heightCm, weeklyGoal: d.weeklyGoal, restDays: d.restDays, shareWeight: d.shareWeight, tz: d.tz, onboarded: d.onboarded,
+    avatar: d.avatar, supps: d.supps, customExercises: d.customExercises || [], heightCm: d.heightCm, weeklyGoal: d.weeklyGoal, restDays: d.restDays, shareWeight: d.shareWeight, tz: d.tz, onboarded: d.onboarded,
     resetAt: now, createdAt: now, updatedAt: Math.max(now, d.updatedAt + 1),
   };
   await db.set(`user/${user.id}`, user);

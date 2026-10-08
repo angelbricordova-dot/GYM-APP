@@ -147,3 +147,14 @@ test('cambiar nombre: se actualiza, no se puede repetir y sirve para entrar', as
   assert.equal((await call('POST', '/login', { body: { name: 'Ángel Bricordova', pin: '1234' } })).status, 200);
   assert.equal((await call('POST', '/me/rename', { token: A.token, body: { name: 'ÁNGEL bricordova' } })).status, 200); // mismo nombre con otras mayúsculas
 });
+
+test('ejercicios propios: se guardan, se limpian y le llegan a la pareja', async () => {
+  const d = (await sync(A)).me;
+  const put = (extra) => call('PUT', '/me', { token: A.token, body: { doc: { ...d, ...extra, updatedAt: d.updatedAt + 10 } } });
+  const r = await put({ customExercises: [{ name: '  Remo Pendlay  ', group: 'Espalda' }, { name: 'Nada', group: 'Inventado' }, { name: '' }, 5] });
+  assert.equal(r.status, 200);
+  const mine = (await sync(A)).me.customExercises;
+  assert.deepEqual(mine, [{ name: 'Remo Pendlay', group: 'Espalda' }, { name: 'Nada', group: null }]);
+  const seen = (await call('GET', '/sync?meAt=0&partnerAt=0', { token: B.token })).data.partner.doc.customExercises;
+  assert.equal(seen[0].name, 'Remo Pendlay'); // ella lo ve en su lista
+});

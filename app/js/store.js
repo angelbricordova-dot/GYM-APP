@@ -24,10 +24,19 @@ export const state = load();
 export const net = { syncing: false, online: true, error: null, lastSync: 0 };
 const subs = new Set();
 
+/** El borrador del entreno es solo de este teléfono y de esta cuenta: uno ajeno o uno vacío que quedó olvidado se descarta. */
+function cleanDraft(st) {
+  const d = st.draft;
+  if (!d) return st;
+  const touched = d.exercises?.some((e) => e.sets?.some((x) => x.done || x.kg || x.reps));
+  if ((d.uid && st.auth?.uid && d.uid !== st.auth.uid) || (!d.editingId && !touched && Date.now() - d.startedAt > 3 * 3600e3)) st.draft = null;
+  return st;
+}
+
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s && typeof s === 'object') return { ...fresh(), ...s };
+    if (s && typeof s === 'object') return cleanDraft({ ...fresh(), ...s });
   } catch { /* storage bloqueado o dañado */ }
   return fresh();
 }
@@ -99,7 +108,11 @@ function incoming(prev, cur, name, first) {
 }
 let version = 0;
 export const getVersion = () => version;
-const emit = () => { version++; subs.forEach((fn) => fn()); };
+const emit = () => {
+  version++;
+  if (state.me) L.setCustomExercises(L.customExercises(state.me, state.partner?.doc)); // ejercicios nuevos de los dos
+  subs.forEach((fn) => fn());
+};
 const commit = () => { save(); emit(); };
 
 // ---------- red ----------
@@ -337,15 +350,24 @@ export function beginEdit(id) {
   const s = state.me.sessions.find((x) => x.id === id);
   if (!s || state.draft) return false;
   state.draft = {
-    editingId: s.id, startedAt: Date.now(), date: s.date, time: s.time, durationMin: s.durationMin || 0, note: s.note || '',
+    uid: state.auth?.uid, editingId: s.id, startedAt: Date.now(), date: s.date, time: s.time, durationMin: s.durationMin || 0, note: s.note || '',
     exercises: s.exercises.map((ex) => ({ id: L.uid(), name: ex.name, sets: ex.sets.map((x) => ({ id: L.uid(), kg: x.kg ? String(x.kg) : '', reps: String(x.reps), done: true })) })),
   };
   commit();
   return true;
 }
 
+/** Un ejercicio nuevo que no estaba en la lista se guarda para siempre y también le aparece a mi pareja. */
+export const addExercise = (name, group = null) => update((me) => {
+  const n = String(name).trim().slice(0, 40);
+  if (!n || L.customExercises(me, state.partner?.doc).some((c) => L.keyOf(c.name) === L.keyOf(n)) || L.LIBRARY.some(([, l]) => l.some((x) => L.keyOf(x) === L.keyOf(n)))) return;
+  me.customExercises = [...(me.customExercises || []), { name: n, group }];
+});
+
 // ---------- borrador del entreno en curso ----------
-export const setDraft = (d) => { state.draft = d; save(); emit(); };
+export const setDraft = (d) => { state.draft = d ? { ...d, uid: state.auth?.uid } : null; save(); emit(); };
+/** ¿Hay un entreno en curso con algo anotado (o una edición abierta)? */
+export const draftHasWork = () => !!state.draft && (!!state.draft.editingId || state.draft.exercises.some((e) => e.sets.some((x) => x.done || x.kg || x.reps)));
 
 // ---------- pareja: propuestas, cupones y mensajes ----------
 async function act(method, path, body) {

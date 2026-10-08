@@ -17,6 +17,10 @@ const draftFrom = (items, doc) => ({
 
 /** Arranca un entreno con esos ejercicios (texto o { name, sets, reps }) ya con la meta de la vez pasada, y abre la pantalla. */
 export function beginWorkout(items) {
+  // nunca se pisa en silencio un entreno en curso (antes un toque en una rutina lo reemplazaba sin avisar)
+  if (S.state.draft && S.draftHasWork()) {
+    if (!confirm('Ya tienes un entreno en curso. ¿Reemplazarlo por este? Se pierde lo que llevas anotado.')) { openScreen('workout'); return; }
+  }
   S.setDraft(draftFrom(items, S.state.me));
   openScreen('workout');
 }
@@ -159,12 +163,13 @@ function ExercisePicker({ doc, added, onAdd, onClose }) {
   const known = new Map(cat.map((c) => [c.key, c]));
   const term = L.keyOf(q);
   const match = (n) => !term || L.keyOf(n).includes(term);
-  const groups = ['Todos', ...L.LIBRARY.map(([g]) => g)];
-  const inGroup = (n) => group === 'Todos' || L.LIBRARY.find(([g]) => g === group)[1].some((x) => L.keyOf(x) === L.keyOf(n));
+  const LIB = L.libraryWithCustom();
+  const groups = ['Todos', ...LIB.map(([g]) => g)];
+  const inGroup = (n) => group === 'Todos' || LIB.find(([g]) => g === group)?.[1].some((x) => L.keyOf(x) === L.keyOf(n));
   const recents = cat.filter((c) => match(c.name) && inGroup(c.name));
-  const lib = L.LIBRARY.filter(([g]) => group === 'Todos' || g === group)
+  const lib = LIB.filter(([g]) => group === 'Todos' || g === group)
     .map(([g, names]) => [g, names.filter((n) => !known.has(L.keyOf(n)) && match(n))]).filter(([, n]) => n.length);
-  const exact = known.has(term) || L.LIBRARY.some(([, n]) => n.some((x) => L.keyOf(x) === term));
+  const exact = known.has(term) || LIB.some(([, n]) => n.some((x) => L.keyOf(x) === term));
   const lastTxt = (name) => { const s = L.suggestNext(doc, name); return s ? `Meta: ${s.sets}×${s.reps}${s.kg ? ` · ${fmtKg(s.kg)}` : ''}` : ''; };
   const Row = ({ name, sub }) => {
     const on = added.includes(L.keyOf(name));
@@ -176,7 +181,7 @@ function ExercisePicker({ doc, added, onAdd, onClose }) {
   return html`<${Sheet} title="Agregar ejercicio" full onClose=${onClose}>
     <input class="search" type="search" placeholder="Buscar o escribir uno nuevo" value=${q} onInput=${(e) => setQ(e.target.value)} enterkeyhint="search" />
     <div class="chips">${groups.map((g) => html`<button class=${cx('chip pick', group === g && 'on')} onClick=${() => setGroup(g)}>${g}</button>`)}</div>
-    ${term && !exact && html`<button class="pick-row new" onClick=${() => { onAdd(q.trim()); setQ(''); }}><span><b>Crear “${q.trim()}”</b><small>Ejercicio nuevo</small></span><span class="pick-plus"><${Icon} name="plus" size=${18} sw=${2.4} /></span></button>`}
+    ${term && !exact && html`<button class="pick-row new" onClick=${() => { S.addExercise(q.trim(), LIB.some(([g]) => g === group) && group !== 'Míos' ? group : null); onAdd(q.trim()); setQ(''); }}><span><b>Crear “${q.trim()}”</b><small>Ejercicio nuevo</small></span><span class="pick-plus"><${Icon} name="plus" size=${18} sw=${2.4} /></span></button>`}
     ${recents.length > 0 && html`<h3 class="sec-h">Tus ejercicios</h3>${recents.map((c) => html`<${Row} name=${c.name} sub=${lastTxt(c.name)} />`)}`}
     ${lib.map(([g, names]) => html`<h3 class="sec-h">${g}</h3>${names.map((n) => html`<${Row} name=${n} />`)}`)}
     <button class="btn primary block lg sticky-done" onClick=${onClose}>Listo${added.length ? ` · ${added.length} en el entreno` : ''}</button>
