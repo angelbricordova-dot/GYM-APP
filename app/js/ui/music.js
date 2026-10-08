@@ -7,8 +7,11 @@ import { parseMusicLink } from '../music-links.js';
 // ---------- reproductor global: sigue sonando mientras cambias de pestaña o entrenas ----------
 const POS_KEY = 'gymduo.dock';
 const loadPos = () => { try { const p = JSON.parse(localStorage.getItem(POS_KEY)); return p && Number.isFinite(p.x) && Number.isFinite(p.y) ? p : null; } catch { return null; } };
-const player = { item: null, big: true, pos: loadPos() }; // `pos`: dónde dejaste el reproductor mini (null = esquina de abajo a la derecha)
-const MINI = { w: 128, h: 72 };
+const OPTS_KEY = 'gymduo.dock.opts';
+const loadOpts = () => { try { const o = JSON.parse(localStorage.getItem(OPTS_KEY)); return { shape: o?.shape === 'square' ? 'square' : 'circle', covered: !!o?.covered }; } catch { return { shape: 'circle', covered: false }; } };
+const player = { item: null, big: true, pos: loadPos(), ...loadOpts() }; // `pos`: dónde dejaste el reproductor mini (null = esquina de abajo a la derecha)
+const MINI_SIZE = { circle: { w: 104, h: 104 }, square: { w: 128, h: 72 } };
+const mini = () => MINI_SIZE[player.shape];
 /** Zonas del teléfono que no se pueden tocar (muesca, isla dinámica, barra de inicio). */
 function insets() {
   const el = document.createElement('div');
@@ -25,7 +28,7 @@ const clampPos = (x, y) => {
   const W = document.documentElement.clientWidth || innerWidth;
   const H = document.documentElement.clientHeight || innerHeight;
   const m = 10;
-  return { x: Math.max(m + i.l, Math.min(W - MINI.w - m - i.r, x)), y: Math.max(i.t + m + 8, Math.min(H - MINI.h - m - i.b, y)) };
+  return { x: Math.max(m + i.l, Math.min(W - mini().w - m - i.r, x)), y: Math.max(i.t + m + 8, Math.min(H - mini().h - m - i.b, y)) };
 };
 let drag = null;
 const dragStart = (e) => {
@@ -66,6 +69,12 @@ export async function playItem(item) {
   return player.item;
 }
 export const setBig = (v) => { player.big = v; emit(); };
+/** Forma del reproductor mini (círculo o cuadro) y si está tapado (suena sin mostrar el video). Se recuerda. */
+export const setOpt = (patch) => {
+  Object.assign(player, patch);
+  try { localStorage.setItem(OPTS_KEY, JSON.stringify({ shape: player.shape, covered: player.covered })); } catch { /* sin storage */ }
+  emit();
+};
 export function stopPlayer() {
   player.item = null;
   emit();
@@ -79,12 +88,26 @@ export function MusicDock({ expanded }) {
   if (!item) return null;
   const l = item.link;
   const mode = expanded ? 'full' : player.big ? 'big' : 'mini';
-  const h = { full: 220, big: 276, mini: 72 }[mode];
+  const round = player.shape === 'circle';
+  const size = mode === 'mini' ? mini() : null;
+  const h = mode === 'mini' ? size.h : { full: 220, big: 316 }[mode];
   const at = mode === 'mini' && player.pos ? (({ x, y } = clampPos(player.pos.x, player.pos.y)) => `left:${x}px;top:${y}px;right:auto;bottom:auto;transform:none;`)() : '';
-  return html`<div class=${cx('music-dock', mode)} style=${`height:${h}px;${at}`}>
+  const covered = mode === 'mini' && player.covered;
+  const grip = { onPointerDown: dragStart, onPointerMove: dragMove, onPointerUp: dragEnd, onPointerCancel: dragEnd };
+  return html`<div class=${cx('music-dock', mode, mode === 'mini' && (round ? 'round' : 'sq'))} style=${`height:${h}px;${size ? `width:${size.w}px;` : ''}${at}`}>
     <iframe title="Reproductor" src=${`${l.embed}&autoplay=1`} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" referrerpolicy="strict-origin-when-cross-origin" loading="eager"></iframe>
-    ${mode === 'big' && html`<div class="dock-bar"><span class="grow"><b>${item.title || 'Música'}</b><small class="muted">Si no empieza sola, toca ▶</small></span><button class="btn sm tinted" onClick=${() => setBig(false)}>Minimizar</button><button class="icon-btn flat" onClick=${stopPlayer} aria-label="Cerrar el reproductor"><${Icon} name="x" size=${16} sw=${2.4} /></button></div>`}
-    ${mode === 'mini' && html`<div class="dock-grip" onPointerDown=${dragStart} onPointerMove=${dragMove} onPointerUp=${dragEnd} onPointerCancel=${dragEnd} aria-label="Mover el reproductor"></div><button class="dock-x" onClick=${stopPlayer} aria-label="Cerrar el reproductor"><${Icon} name="x" size=${14} sw=${2.6} /></button><button class="dock-grow" onClick=${() => setBig(true)}>Ampliar</button>`}
+    ${mode === 'big' && html`<div class="dock-bar">
+      <div class="dock-title"><span class="grow"><b>${item.title || 'Música'}</b><small class="muted">Si no empieza sola, toca ▶</small></span><button class="icon-btn flat" onClick=${stopPlayer} aria-label="Cerrar el reproductor"><${Icon} name="x" size=${16} sw=${2.4} /></button></div>
+      <div class="dock-opts">
+        <button class="chip" onClick=${() => setBig(false)}><${Icon} name="expand" size=${14} /> Minimizar</button>
+        <button class="chip" onClick=${() => setOpt({ shape: round ? 'square' : 'circle' })}>${round ? '⬜ Cuadro' : '⚪ Círculo'}</button>
+        <button class=${cx('chip', player.covered && 'pick on')} onClick=${() => setOpt({ covered: !player.covered })}><${Icon} name=${player.covered ? 'eyeOff' : 'eye'} size=${14} /> ${player.covered ? 'Tapado' : 'Tapar'}</button>
+      </div>
+    </div>`}
+    ${covered && html`<div class="dock-cover" ...${grip} aria-label="Reproductor tapado: arrástralo para moverlo">${item.art ? html`<img src=${item.art} alt="" />` : html`<${Icon} name="music" size=${26} />`}<i class="dock-beat"></i></div>`}
+    ${mode === 'mini' && !covered && html`<div class="dock-grip" ...${grip} aria-label="Mover el reproductor"></div>`}
+    ${mode === 'mini' && html`<button class="dock-x" onClick=${stopPlayer} aria-label="Cerrar el reproductor"><${Icon} name="x" size=${14} sw=${2.6} /></button>
+      <div class="dock-ctrl"><button onClick=${() => setOpt({ covered: !player.covered })} aria-label=${covered ? 'Mostrar el video' : 'Tapar el video'}><${Icon} name=${covered ? 'eye' : 'eyeOff'} size=${14} /></button><button onClick=${() => setBig(true)} aria-label="Ampliar"><${Icon} name="expand" size=${14} /></button></div>`}
   </div>`;
 }
 

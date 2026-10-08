@@ -952,3 +952,24 @@ button.mo-cell:disabled { opacity: 1; }
 .dock-grip:active { cursor: grabbing; }
 
 .dock-grip { height: 34px; }
+
+/* mini: círculo o cuadro, y tapado */
+.music-dock.mini.round { border-radius: 50%; }
+.music-dock.mini.round iframe { position: absolute; top: 0; left: 50%; width: 186px; height: 104px; transform: translateX(-50%); }
+.music-dock.mini .dock-x { top: 4px; right: 4px; z-index: 3; }
+.music-dock.mini.round .dock-x { top: 6px; right: 10px; }
+.music-dock.mini.round .dock-grip { left: 18px; right: 18px; border-radius: 0 0 14px 14px; }
+.dock-cover { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; background: var(--s3); color: var(--text2); touch-action: none; cursor: grab; overflow: hidden; }
+.dock-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .9; }
+.dock-beat { position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 3px var(--accent); animation: dockBeat 1.6s ease-in-out infinite; pointer-events: none; }
+@keyframes dockBeat { 50% { box-shadow: inset 0 0 0 6px color-mix(in srgb, var(--accent) 50%, transparent); } }
+.dock-ctrl { position: absolute; left: 0; right: 0; bottom: 5px; z-index: 3; display: flex; justify-content: center; gap: 6px; }
+.dock-ctrl button { width: 26px; height: 26px; border: 0; border-radius: 50%; display: grid; place-items: center; background: rgba(0, 0, 0, .62); color: #fff; }
+.music-dock.mini.sq .dock-ctrl { justify-content: flex-start; padding-left: 6px; }
+.dock-grow { display: none; }
+.dock-bar { flex-direction: column; align-items: stretch; gap: 8px; padding: 8px 10px 10px 14px; }
+.dock-title { display: flex; align-items: center; gap: 8px; }
+.dock-title .grow { min-width: 0; }
+.dock-opts { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (prefers-reduced-motion: reduce) { .dock-beat { animation: none; } }
+.dock-opts .chip { padding: 0 10px; font-size: 14px; gap: 4px; }
