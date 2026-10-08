@@ -86,7 +86,7 @@ export function Profile() {
 
       <h3 class="sec-h">Música</h3>
       <div class="group">
-        <button class="row" onClick=${openMusic}><span class="lead tint-green"><${Icon} name="music" size=${18} /></span><div class="grow"><b>Spotify y YouTube Music</b><small class="muted">Vincula tu cuenta, escucha dentro de la app y mira qué escucha tu pareja</small></div><${Icon} name="right" size=${16} class="chev" /></button>
+        <button class="row" onClick=${openMusic}><span class="lead tint-green"><${Icon} name="music" size=${18} /></span><div class="grow"><b>YouTube Music</b><small class="muted">Escucha dentro de la app y mira qué escucha tu pareja</small></div><${Icon} name="right" size=${16} class="chev" /></button>
       </div>
 
       <h3 class="sec-h">Notificaciones</h3>

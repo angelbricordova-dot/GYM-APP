@@ -3,8 +3,6 @@ import * as S from './store.js';
 import { App } from './ui/app.js';
 import { goTab } from './ui/nav.js';
 import { unlockAudio } from './theme.js';
-import { finishSpotifyLink } from './music.js';
-import { toast } from './ui/kit.js';
 
 const TABS = ['today', 'train', 'progress', 'together', 'rewards'];
 
@@ -19,7 +17,6 @@ render(html`<${App} />`, document.getElementById('root'));
 // el primer toque “despierta” el audio (iOS lo exige) y deja listo el sonido del corazón
 addEventListener('pointerdown', () => unlockAudio(), { once: true, capture: true });
 S.startSyncLoop();
-finishSpotifyLink().then((r) => r && toast(r.ok ? `Spotify vinculado${r.name ? `: ${r.name}` : ''}` : r.error, { icon: r.ok ? '🎧' : '⚠️' })); // sin sesión no hace nada; al iniciar sesión ya está activo
 
 // Al abrir desde una notificación (?tab=together) o si la app ya estaba abierta (mensaje del service worker).
 const fromUrl = new URL(location.href).searchParams.get('tab');

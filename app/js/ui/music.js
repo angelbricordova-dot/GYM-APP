@@ -3,7 +3,6 @@ import * as S from '../store.js';
 import { Icon, toast, cx, relTime } from './kit.js';
 import { closeScreen, openScreen } from './nav.js';
 import { parseMusicLink } from '../music-links.js';
-import { startSpotifyLink } from '../music.js';
 
 // ---------- reproductor global: sigue sonando mientras cambias de pestaña o entrenas ----------
 const player = { item: null };
@@ -32,17 +31,15 @@ export function stopPlayer() {
   emit();
   S.request('POST', '/music/stop');
 }
-const tall = (l) => l.service === 'spotify' && !['track', 'episode'].includes(l.kind); // álbumes y listas piden un reproductor más alto
 
 /** Se monta una vez en la app: el iframe no se destruye al navegar, así la música no se corta. */
 export function MusicDock({ expanded }) {
   const item = usePlayer();
   if (!item) return null;
   const l = item.link;
-  const yt = l.service === 'youtube';
   const full = expanded;
-  const h = yt ? (full ? 220 : 72) : full || tall(l) ? 152 : 80;
-  return html`<div class=${cx('music-dock', full ? 'full' : 'mini', yt && 'yt')} style=${`height:${h}px`}>
+  const h = full ? 220 : 72;
+  return html`<div class=${cx('music-dock', full ? 'full' : 'mini')} style=${`height:${h}px`}>
     <iframe title="Reproductor" src=${l.embed} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" referrerpolicy="strict-origin-when-cross-origin" loading="eager"></iframe>
     ${!full && html`<button class="dock-x" onClick=${stopPlayer} aria-label="Cerrar el reproductor"><${Icon} name="x" size=${14} sw=${2.6} /></button>`}
   </div>`;
@@ -88,24 +85,14 @@ export function Music() {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!parseMusicLink(url)) return toast('Pega un enlace de Spotify, YouTube o YouTube Music', { icon: '⚠️' });
+    if (!parseMusicLink(url)) return toast('Pega un enlace de YouTube Music', { icon: '⚠️' });
     setBusy(true);
     await playItem({ url });
     setBusy(false);
     setUrl('');
   };
   const paste = async () => { try { const t = await navigator.clipboard.readText(); if (t) setUrl(t.trim()); } catch { toast('Pega el enlace en el cuadro', { icon: 'ℹ️' }); } };
-  const link = async () => {
-    const r = await startSpotifyLink();
-    if (!r.ok) toast(r.error, { icon: '⚠️' });
-  };
-  const unlink = async () => {
-    if (!confirm('¿Desvincular Spotify? Dejarás de mostrar lo que escuchas.')) return;
-    const r = await S.request('POST', '/spotify/unlink');
-    if (r.ok) { toast('Spotify desvinculado', { icon: '🎧' }); load(); }
-  };
-  const sp = data?.spotify;
-  const slot = item ? (item.link.service === 'youtube' ? 220 : tall(item.link) ? 152 : 152) : 0;
+  const slot = item ? 220 : 0;
 
   return html`<div class="screen music">
     <div class="screen-top"><button class="icon-btn" onClick=${closeScreen} aria-label="Volver"><${Icon} name="left" size=${20} /></button><b>Música</b><span></span></div>
@@ -115,26 +102,20 @@ export function Music() {
       ${S.state.partner && html`<${ListeningLine} info=${partner} />`}
 
       <form class="music-add" onSubmit=${submit}>
-        <input class="search" type="url" inputmode="url" placeholder="Pega un enlace de Spotify, YouTube o YouTube Music" value=${url} onInput=${(e) => setUrl(e.target.value)} />
+        <input class="search" type="url" inputmode="url" placeholder="Pega un enlace de YouTube Music" value=${url} onInput=${(e) => setUrl(e.target.value)} />
         <div class="row-btns">
           <button type="button" class="btn tinted sm" onClick=${paste}><${Icon} name="copy" size=${15} /> Pegar</button>
           <button class="btn primary sm" disabled=${busy || !url.trim()}><${Icon} name="play" size=${15} fill /> Reproducir</button>
         </div>
       </form>
 
-      <h3 class="sec-h">Cuentas</h3>
-      <div class="group">
-        <div class="row static"><span class="lead tint-green">🎧</span><div class="grow"><b>Spotify</b><small class="muted">${!sp ? 'Cargando…' : sp.linked ? `Vinculado${sp.name ? ` · ${sp.name}` : ''}: tu historial y lo que escuchas se ven aquí` : sp.available ? 'Vincúlalo para ver tu historial y que tu pareja vea qué escuchas' : 'No disponible: falta configurar SPOTIFY_CLIENT_ID en Netlify'}</small></div>
-          ${sp?.linked ? html`<button class="btn sm ghost" onClick=${unlink}>Desvincular</button>` : sp?.available ? html`<button class="btn sm primary" onClick=${link}>Vincular</button>` : null}</div>
-        <div class="row static"><span class="lead tint-rose">▶️</span><div class="grow"><b>YouTube Music</b><small class="muted">No permite ver el historial desde otras apps. Pega aquí un enlace y suena dentro de la app; queda guardado en tu historial.</small></div></div>
-      </div>
-      ${data?.error && html`<p class="muted small">${data.error}</p>`}
+      <p class="muted small">YouTube Music no permite ver tu historial desde otras apps: aquí se guarda lo que reproduces. Abre una canción en YouTube Music, toca Compartir → Copiar enlace y pégalo aquí.</p>
 
       <h3 class="sec-h">Historial</h3>
-      ${data && data.items.length === 0 && html`<p class="muted">Todavía no hay nada. Pega un enlace o vincula Spotify.</p>`}
+      ${data && data.items.length === 0 && html`<p class="muted">Todavía no hay nada. Pega un enlace de YouTube Music para empezar.</p>`}
       <div class="group">${(data?.items || []).map((t) => html`<button class="row track" onClick=${() => playItem(t)}>
         ${t.art ? html`<img src=${t.art} alt="" />` : html`<span class="l-art"><${Icon} name="music" size=${18} /></span>`}
-        <div class="grow"><b>${t.title}</b><small class="muted">${[t.artist, t.service === 'spotify' ? 'Spotify' : 'YouTube', relTime(t.ts)].filter(Boolean).join(' · ')}</small></div>
+        <div class="grow"><b>${t.title}</b><small class="muted">${[t.artist, 'YouTube', relTime(t.ts)].filter(Boolean).join(' · ')}</small></div>
         <${Icon} name="play" size=${16} fill />
       </button>`)}</div>
     </div>

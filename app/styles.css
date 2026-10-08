@@ -913,7 +913,7 @@ button.mo-cell:disabled { opacity: 1; }
 .music-dock iframe { width: 100%; height: 100%; border: 0; display: block; }
 .music-dock.full { top: calc(env(safe-area-inset-top) + 66px); }
 .music-dock.mini { bottom: calc(env(safe-area-inset-bottom) + var(--tab-h) + 24px); }
-.music-dock.mini.yt { left: auto; right: var(--pad); transform: none; width: 128px; }
+.music-dock.mini { left: auto; right: var(--pad); transform: none; width: 128px; }
 .dock-x { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .6); color: #fff; display: grid; place-items: center; }
 .music-now { display: flex; align-items: center; gap: 10px; padding: 4px 2px 12px; }
 .music-now b { display: block; }
