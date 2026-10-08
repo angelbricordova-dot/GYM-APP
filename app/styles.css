@@ -929,3 +929,12 @@ button.mo-cell:disabled { opacity: 1; }
 .row.track img, .row.track .l-art { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; flex: none; background: var(--s3); display: grid; place-items: center; }
 .row.track .grow b, .row.track .grow small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pv-card .listening { margin: 10px 0 0; }
+
+.music-card .row-between { margin-bottom: 2px; }
+.music-card h2 { margin: 0; }
+.music-card .link { font-size: 15px; }
+.music-card .music-now { padding: 8px 2px; }
+.music-quick { display: flex; gap: 8px; margin-top: 8px; }
+.music-quick input { flex: 1; min-width: 0; }
+.music-quick .btn { flex: none; width: 44px; padding: 0; }
+.music-recent { margin-top: 10px; }

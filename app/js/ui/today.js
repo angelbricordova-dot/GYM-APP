@@ -4,7 +4,7 @@ import * as L from '../logic.js';
 import { Icon, Flame, Avatar, Heart, Points, CountUp, puntos, toast, cx, fmtKg, fmtShort, fmtDur } from './kit.js';
 import { openScreen, goTab } from './nav.js';
 import { beginWorkout } from './workout.js';
-import { usePartnerMusic, ListeningLine, openMusic } from './music.js';
+import { MusicCard } from './music.js';
 import { ChallengeCard, NewChallengeSheet } from './challenges.js';
 import { shareInvite, copyInvite } from '../invite.js';
 import { SkipSheet, SkipDecision } from './skip.js';
@@ -62,6 +62,8 @@ export function Today() {
       <small class="muted next-txt">${bal < 0 ? 'Se paga con tus próximos puntos' : nextReward(bal)}</small>
       <${Icon} name="right" size=${16} class="chev" />
     </button>
+
+    <${MusicCard} />
 
     <${Goals} me=${me} />
     ${skip && html`<${SkipSheet} onClose=${() => setSkip(false)} />`}
@@ -162,7 +164,6 @@ function Banners() {
 function PartnerCard({ partner }) {
   const [challenge, setChallenge] = useState(false);
   const [other, setOther] = useState(() => !!S.state.pendingInvite); // llegó con un enlace de otra persona
-  const music = usePartnerMusic(!!partner);
   if (!partner) {
     return html`<section class="card rise invite" style="--i:3">
       <h2>Invita a tu pareja</h2>
@@ -191,13 +192,11 @@ function PartnerCard({ partner }) {
       </div>
       ${info && html`<div class="pc-streak"><${Flame} size=${22} lit=${info.alive} /><b>${info.current}</b></div>`}
     </button>
-    <${ListeningLine} info=${music} compact />
     ${partner.push === false && html`<p class="nopush muted small">🔕 ${partner.name} aún no tiene las notificaciones activadas: no se entera de tus avisos hasta que abra la app.</p>`}
     ${sk && !ck && !S.isDismissed(skKey) && html`<div class="skip-note"><span>“${sk.reason}”</span><button class="icon-btn flat" onClick=${() => S.dismiss(skKey)} aria-label="Cerrar este aviso"><${Icon} name="x" size=${16} /></button></div>`}
     <div class="pc-actions">
       <button class="btn tinted sm" onClick=${cheer}><${Icon} name="heart" size=${15} /> Mandar ánimo</button>
       <button class="btn tinted sm" onClick=${() => setChallenge(true)}><${Icon} name="target" size=${15} /> Retar</button>
-      <button class="btn tinted sm" onClick=${openMusic} aria-label="Música"><${Icon} name="music" size=${15} /></button>
     </div>
     ${challenge && html`<${NewChallengeSheet} onClose=${() => setChallenge(false)} />`}
   </section>`;

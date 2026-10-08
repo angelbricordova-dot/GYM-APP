@@ -123,3 +123,33 @@ export function Music() {
 }
 
 export const openMusic = () => openScreen('music');
+
+/** Tarjeta de Hoy (debajo de Puntos de amor): reproducir rápido, lo que escucha mi pareja y lo último que sonó. */
+export function MusicCard() {
+  const item = usePlayer();
+  const partner = usePartnerMusic(!!S.state.partner);
+  const [recent, setRecent] = useState([]);
+  const [url, setUrl] = useState('');
+  useEffect(() => { S.request('GET', '/music/me').then((r) => r.ok && setRecent(r.data.items.slice(0, 3))); }, [item?.url]);
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!parseMusicLink(url)) return toast('Pega un enlace de YouTube Music', { icon: '⚠️' });
+    const t = url;
+    setUrl('');
+    await playItem({ url: t });
+  };
+  return html`<section class="card music-card rise" style="--i:5">
+    <div class="row-between"><h2>🎧 Música</h2><button class="link" onClick=${openMusic}>Ver todo</button></div>
+    ${item && html`<div class="music-now"><span class="grow"><small class="muted">Reproduciendo</small><b>${item.title || 'Música'}</b></span><button class="btn sm tinted" onClick=${stopPlayer}>Detener</button></div>`}
+    ${S.state.partner && html`<${ListeningLine} info=${partner} compact />`}
+    <form class="music-quick" onSubmit=${submit}>
+      <input class="search" type="url" inputmode="url" placeholder="Pega un enlace de YouTube Music" value=${url} onInput=${(e) => setUrl(e.target.value)} />
+      <button class="btn primary sm" disabled=${!url.trim()} aria-label="Reproducir"><${Icon} name="play" size=${15} fill /></button>
+    </form>
+    ${recent.length > 0 && html`<div class="group music-recent">${recent.map((t) => html`<button class="row track" onClick=${() => playItem(t)}>
+      ${t.art ? html`<img src=${t.art} alt="" />` : html`<span class="l-art"><${Icon} name="music" size=${18} /></span>`}
+      <div class="grow"><b>${t.title}</b><small class="muted">${[t.artist, relTime(t.ts)].filter(Boolean).join(' · ')}</small></div>
+      <${Icon} name="play" size=${16} fill />
+    </button>`)}</div>`}
+  </section>`;
+}
