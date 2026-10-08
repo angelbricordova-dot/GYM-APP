@@ -5,7 +5,7 @@ import { closeScreen, openScreen } from './nav.js';
 import { parseMusicLink } from '../music-links.js';
 
 // ---------- reproductor global: sigue sonando mientras cambias de pestaña o entrenas ----------
-const player = { item: null };
+const player = { item: null, big: true }; // `big`: recién puesta suena grande para poder tocar ▶ si el teléfono no la arranca sola; se achica con “Minimizar”
 const listeners = new Set();
 const usePlayer = () => {
   const [, tick] = useState(0);
@@ -19,6 +19,7 @@ export async function playItem(item) {
   const link = parseMusicLink(item?.url);
   if (!link) { toast('Ese enlace no se puede reproducir aquí', { icon: '⚠️' }); return null; }
   player.item = { ...item, link };
+  player.big = true;
   emit();
   const r = await S.request('POST', '/music/play', { url: link.url });
   if (r.ok) player.item = { ...r.data.item, link };
@@ -26,22 +27,25 @@ export async function playItem(item) {
   emit();
   return player.item;
 }
+export const setBig = (v) => { player.big = v; emit(); };
 export function stopPlayer() {
   player.item = null;
   emit();
   S.request('POST', '/music/stop');
 }
 
-/** Se monta una vez en la app: el iframe no se destruye al navegar, así la música no se corta. */
+/** Se monta una vez en la app: el iframe no se destruye al navegar, así la música no se corta.
+ *  Tres tamaños: en la pantalla Música (arriba), grande (recién reproducida: ahí se toca ▶ si hace falta) y mini (esquina). */
 export function MusicDock({ expanded }) {
   const item = usePlayer();
   if (!item) return null;
   const l = item.link;
-  const full = expanded;
-  const h = full ? 220 : 72;
-  return html`<div class=${cx('music-dock', full ? 'full' : 'mini')} style=${`height:${h}px`}>
-    <iframe title="Reproductor" src=${l.embed} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" referrerpolicy="strict-origin-when-cross-origin" loading="eager"></iframe>
-    ${!full && html`<button class="dock-x" onClick=${stopPlayer} aria-label="Cerrar el reproductor"><${Icon} name="x" size=${14} sw=${2.6} /></button>`}
+  const mode = expanded ? 'full' : player.big ? 'big' : 'mini';
+  const h = { full: 220, big: 276, mini: 72 }[mode];
+  return html`<div class=${cx('music-dock', mode)} style=${`height:${h}px`}>
+    <iframe title="Reproductor" src=${`${l.embed}&autoplay=1`} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" referrerpolicy="strict-origin-when-cross-origin" loading="eager"></iframe>
+    ${mode === 'big' && html`<div class="dock-bar"><span class="grow"><b>${item.title || 'Música'}</b><small class="muted">Si no empieza sola, toca ▶</small></span><button class="btn sm tinted" onClick=${() => setBig(false)}>Minimizar</button><button class="icon-btn flat" onClick=${stopPlayer} aria-label="Cerrar el reproductor"><${Icon} name="x" size=${16} sw=${2.4} /></button></div>`}
+    ${mode === 'mini' && html`<button class="dock-x" onClick=${stopPlayer} aria-label="Cerrar el reproductor"><${Icon} name="x" size=${14} sw=${2.6} /></button><button class="dock-grow" onClick=${() => setBig(true)}>Ampliar</button>`}
   </div>`;
 }
 

@@ -938,3 +938,11 @@ button.mo-cell:disabled { opacity: 1; }
 .music-quick input { flex: 1; min-width: 0; }
 .music-quick .btn { flex: none; width: 44px; padding: 0; }
 .music-recent { margin-top: 10px; }
+
+.music-dock { display: flex; flex-direction: column; }
+.music-dock iframe { flex: 1; min-height: 0; }
+.music-dock.big { bottom: calc(env(safe-area-inset-bottom) + var(--tab-h) + 24px); }
+.dock-bar { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px; background: var(--s1); }
+.dock-bar .grow { min-width: 0; }
+.dock-bar b, .dock-bar small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-grow { position: absolute; left: 6px; bottom: 6px; border: 0; border-radius: 99px; padding: 2px 8px; font-size: 11px; font-weight: 650; background: rgba(0, 0, 0, .6); color: #fff; }
