@@ -6,6 +6,7 @@ import { Icon, Sheet, Avatar, Stepper, Field, Segmented, toast, cx } from './kit
 import { pushSupport, currentSubscription, enablePush, disablePush, repairPush, setPrefs, sendTest, serviceOf, localTest, serverHasMe } from '../push.js';
 import { GoogleButton } from './google-button.js';
 import { AvatarCropper } from './cropper.js';
+import { openMusic } from './music.js';
 import { JoinOtherSheet } from './link.js';
 import { closeScreen } from './nav.js';
 
@@ -81,6 +82,11 @@ export function Profile() {
         <label class="row switch-row"><div class="grow"><b>Compartir mi peso corporal</b><small class="muted">Por defecto tu pareja no lo ve</small></div><input type="checkbox" checked=${me.shareWeight} onChange=${(e) => S.profile({ shareWeight: e.target.checked })} /></label>
         <div class="row static"><div class="grow"><b>${paused ? 'Racha en pausa' : 'Pausar mi racha'}</b><small class="muted">Enfermedad, lesión o viaje: no se rompe mientras dure</small></div>
           <button class=${cx('btn tinted sm')} onClick=${() => (paused ? S.endPause() : confirm('¿Pausar tu racha hasta que la reanudes?') && S.startPause())}>${paused ? 'Reanudar' : 'Pausar'}</button></div>
+      </div>
+
+      <h3 class="sec-h">Música</h3>
+      <div class="group">
+        <button class="row" onClick=${openMusic}><span class="lead tint-green"><${Icon} name="music" size=${18} /></span><div class="grow"><b>Spotify y YouTube Music</b><small class="muted">Vincula tu cuenta, escucha dentro de la app y mira qué escucha tu pareja</small></div><${Icon} name="right" size=${16} class="chev" /></button>
       </div>
 
       <h3 class="sec-h">Notificaciones</h3>

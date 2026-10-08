@@ -48,6 +48,7 @@ tools/make-icons.mjs      genera los iconos (corazón con pesa sobre degradado) 
 3. **Variables de entorno** (*Site configuration → Environment variables*):
    - `SETUP_CODE` — **recomendado**: una palabra secreta. Sin ella, cualquiera que encuentre la URL antes que ustedes podría crear el espacio.
    - `GOOGLE_CLIENT_ID` — solo si quieren entrar con Google (ver abajo).
+   - `SPOTIFY_CLIENT_ID` — solo si quieren vincular Spotify (ver “Música”).
    - `VAPID_SUBJECT` — opcional (`mailto:tu@correo.com`). Por defecto se usa la URL del sitio.
 4. Abre la URL en el celular de la primera persona → **Crear nuestro espacio**. Te muestra un **enlace de invitación**
    (botón *Compartir enlace*). Tu pareja lo abre y llega a la pantalla **Únete** con el código ya escrito; después de crear su perfil
@@ -137,3 +138,17 @@ Los colores de ambos temas pasan una prueba automática de contraste 4.5:1 (`tes
 ## Notas técnicas
 
 Por compatibilidad con datos ya guardados, algunas claves internas conservan el nombre anterior (`gymduo.v2` en el teléfono, `gymduo` en Netlify Blobs).
+
+## Música (Spotify y YouTube Music)
+
+En **Perfil → Música** pegas un enlace de Spotify, YouTube o YouTube Music y suena dentro de la app (el reproductor sigue mientras cambias de pestaña). Lo que reproduces queda en tu historial y tu pareja ve “está escuchando…” en su tarjeta de Hoy y en tu perfil.
+
+Para **vincular Spotify** (historial real y “está escuchando” automático, aunque no tengas la app abierta):
+
+1. En <https://developer.spotify.com/dashboard> crea una app (tipo *Web API*).
+2. En *Redirect URIs* agrega exactamente la dirección de su sitio con barra final, por ejemplo `https://tu-sitio.netlify.app/`.
+3. En *User Management* agrega el correo de Spotify de **cada** persona (las apps en modo desarrollo solo dejan entrar a quien esté ahí; caben hasta 25).
+4. En Netlify crea la variable `SPOTIFY_CLIENT_ID` con el *Client ID* de esa app y vuelve a desplegar.
+5. En la app: Perfil → Música → Vincular.
+
+Notas: no se necesita secreto (se usa PKCE); el servidor guarda el permiso de renovación en tu registro privado. Spotify reproduce canciones completas dentro de la app solo si la sesión de Spotify está abierta en ese navegador; si no, son vistas previas de 30 s. YouTube Music no ofrece forma oficial de leer el historial: solo se guarda lo que reproduces aquí.

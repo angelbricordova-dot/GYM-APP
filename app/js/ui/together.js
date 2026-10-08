@@ -11,6 +11,7 @@ import { shareInvite, copyInvite } from '../invite.js';
 import { openScreen, closeScreen } from './nav.js';
 import { Summary, PhotoStrip, Gallery } from './progress.js';
 import { DaySheet } from './calendar.js';
+import { usePartnerMusic, ListeningLine } from './music.js';
 
 /** Todo lo de a dos: retos del día, tablero de motivación y rutinas recomendadas. El perfil de mi pareja se abre desde su foto. */
 export function Together() {
@@ -151,6 +152,7 @@ function PartnerProfile({ partner }) {
   const [day, setDay] = useState(null);
   const [all, setAll] = useState(false);
   const [challenge, setChallenge] = useState(false);
+  const music = usePartnerMusic(true);
   if (!d) return html`<section class="card"><p class="muted">Cargando su perfil…</p></section>`;
   const info = L.streakInfo(d);
   const pair = L.pairWeekStreak(S.state.me, d);
@@ -164,6 +166,7 @@ function PartnerProfile({ partner }) {
         <div class="pv-avatar"><${Avatar} doc=${d} size=${92} ring /></div>
         <span class="pv-badge"><${Icon} name="eye" size=${14} /> Estás viendo el perfil de ${partner.name}</span>
         <h1>${partner.name}</h1>
+        <${ListeningLine} info=${music} />
         <div class="pv-stats">
           <div><${Flame} size=${22} lit=${info.alive} /><b>${info.current}</b><small>racha</small></div>
           <div><b>${info.total}</b><small>días de gym</small></div>

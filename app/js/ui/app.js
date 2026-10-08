@@ -10,12 +10,13 @@ import { Train } from './train.js';
 import { Progress } from './progress.js';
 import { Together, PartnerScreen } from './together.js';
 import { Rewards } from './rewards.js';
+import { Music, MusicDock } from './music.js';
 import { Workout } from './workout.js';
 import { CheckIn } from './checkin.js';
 import { Profile, Onboarding } from './profile.js';
 
 const SCREENS = { today: Today, train: Train, progress: Progress, together: Together, rewards: Rewards };
-const OVERLAYS = { workout: Workout, checkin: CheckIn, profile: Profile, partner: PartnerScreen };
+const OVERLAYS = { workout: Workout, checkin: CheckIn, profile: Profile, partner: PartnerScreen, music: Music };
 // Cinco secciones, una palabra cada una (guía de iOS: pocas pestañas, etiquetas cortas, la barra solo navega).
 const TABS = [['today', 'home', 'Hoy'], ['train', 'dumbbell', 'Entrenar'], ['progress', 'chart', 'Progreso'], ['together', 'users', 'Juntos'], ['rewards', 'heart', 'Puntos']];
 
@@ -81,6 +82,7 @@ export function App() {
       </button>`)}
     </nav>
     ${Overlay && html`<${Overlay} key=${top.id} ...${top.props} />`}
+    <${MusicDock} expanded=${top?.id === 'music'} />
     ${!st.me.onboarded && !st.me.heightCm && !Overlay && html`<${Onboarding} onClose=${() => {}} />`}
     <${ToastHost} />
   </div>`;

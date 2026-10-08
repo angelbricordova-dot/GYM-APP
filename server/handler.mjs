@@ -4,12 +4,15 @@
 import { randomBytes, randomUUID, scrypt, timingSafeEqual, createHmac, createHash, createPublicKey, verify as cryptoVerify } from 'node:crypto';
 import { createStorage } from './storage.mjs';
 import { createPush, DEFAULT_PREFS } from './push.mjs';
+import { createMusic } from './music.mjs';
 import * as L from '../app/js/logic.js';
 
 export { _push } from './push.mjs';
 
 const db = createStorage();
 const push = createPush(db);
+const music = createMusic(db);
+const reply = (r) => (r.error ? fail(r.status || 409, r.error) : json(200, r));
 export const runReminders = (now) => push.runReminders(now);
 const TOKEN_DAYS = 180;
 const MAX_DOC = 1_500_000;
@@ -943,6 +946,7 @@ export default async function handler(req) {
     if (m === 'POST' && path === '/auth/google') return await googleAuth(await body());
     if (m === 'POST' && path === '/login') return await login(await body());
     if (m === 'POST' && path === '/recover') return await recover(await body());
+    if (m === 'POST' && path === '/spotify/callback') return reply(await music.callback(await body())); // regreso de Spotify: se identifica por `state`, no por sesión
 
     const user = await authUser(req);
     if (!user) return await fail(401, 'Sesión no válida. Vuelve a entrar.');
@@ -957,6 +961,18 @@ export default async function handler(req) {
     if (m === 'POST' && path === '/vouchers') return await postVoucher(user, await body());
     if (m === 'POST' && (r = path.match(/^\/vouchers\/([^/]+)\/(done|claim|confirm|reject|deny|later)$/))) return await voucherAction(user, r[1], r[2], m === 'POST' ? await body() : {});
     if (m === 'POST' && path === '/messages') return await postMessage(user, await body());
+    if (m === 'POST' && path === '/spotify/start') return reply(await music.start(user, await body()));
+    if (m === 'POST' && path === '/spotify/unlink') return reply(await music.unlink(user));
+    if (m === 'GET' && path === '/music/me') return json(200, await music.mine(await db.get(`user/${user.id}`)));
+    if (m === 'POST' && path === '/music/play') return reply(await music.play(user, await body()));
+    if (m === 'POST' && path === '/music/stop') return reply(await music.stop(user));
+    if (m === 'GET' && path === '/music/partner') {
+      const pid = await partnerOf(user);
+      const rec = pid && (await db.get(`user/${pid}`));
+      if (!rec) return json(200, { partner: null });
+      const { now, last } = await music.listening(rec);
+      return json(200, { partner: { name: rec.name, now, last } }); // el error de la cuenta de ella no se comparte
+    }
     if (path.startsWith('/push/')) return await pushRoutes(user, path, m === 'POST' ? await body() : {}, m);
     if (m === 'POST' && path === '/me/reset') return await resetMe(user);
     if (m === 'POST' && path === '/me/delete') return await deleteMe(user);
