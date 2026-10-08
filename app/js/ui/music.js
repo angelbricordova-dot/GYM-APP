@@ -5,7 +5,23 @@ import { closeScreen, openScreen } from './nav.js';
 import { parseMusicLink } from '../music-links.js';
 
 // ---------- reproductor global: sigue sonando mientras cambias de pestaña o entrenas ----------
-const player = { item: null, big: true }; // `big`: recién puesta suena grande para poder tocar ▶ si el teléfono no la arranca sola; se achica con “Minimizar”
+const POS_KEY = 'gymduo.dock';
+const loadPos = () => { try { const p = JSON.parse(localStorage.getItem(POS_KEY)); return p && Number.isFinite(p.x) && Number.isFinite(p.y) ? p : null; } catch { return null; } };
+const player = { item: null, big: true, pos: loadPos() }; // `pos`: dónde dejaste el reproductor mini (null = esquina de abajo a la derecha)
+const MINI = { w: 128, h: 72 };
+const clampPos = (x, y) => ({ x: Math.max(4, Math.min(innerWidth - MINI.w - 4, x)), y: Math.max(4, Math.min(innerHeight - MINI.h - 4, y)) });
+let drag = null;
+const dragStart = (e) => {
+  const r = e.currentTarget.parentElement.getBoundingClientRect();
+  drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+  e.currentTarget.setPointerCapture(e.pointerId);
+};
+const dragMove = (e) => { if (drag) { player.pos = clampPos(e.clientX - drag.dx, e.clientY - drag.dy); emit(); } };
+const dragEnd = () => {
+  if (!drag) return;
+  drag = null;
+  try { localStorage.setItem(POS_KEY, JSON.stringify(player.pos)); } catch { /* sin storage */ }
+}; // `big`: recién puesta suena grande para poder tocar ▶ si el teléfono no la arranca sola; se achica con “Minimizar”
 const listeners = new Set();
 const usePlayer = () => {
   const [, tick] = useState(0);
@@ -42,10 +58,11 @@ export function MusicDock({ expanded }) {
   const l = item.link;
   const mode = expanded ? 'full' : player.big ? 'big' : 'mini';
   const h = { full: 220, big: 276, mini: 72 }[mode];
-  return html`<div class=${cx('music-dock', mode)} style=${`height:${h}px`}>
+  const at = mode === 'mini' && player.pos ? (({ x, y } = clampPos(player.pos.x, player.pos.y)) => `left:${x}px;top:${y}px;right:auto;bottom:auto;transform:none;`)() : '';
+  return html`<div class=${cx('music-dock', mode)} style=${`height:${h}px;${at}`}>
     <iframe title="Reproductor" src=${`${l.embed}&autoplay=1`} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" referrerpolicy="strict-origin-when-cross-origin" loading="eager"></iframe>
     ${mode === 'big' && html`<div class="dock-bar"><span class="grow"><b>${item.title || 'Música'}</b><small class="muted">Si no empieza sola, toca ▶</small></span><button class="btn sm tinted" onClick=${() => setBig(false)}>Minimizar</button><button class="icon-btn flat" onClick=${stopPlayer} aria-label="Cerrar el reproductor"><${Icon} name="x" size=${16} sw=${2.4} /></button></div>`}
-    ${mode === 'mini' && html`<button class="dock-x" onClick=${stopPlayer} aria-label="Cerrar el reproductor"><${Icon} name="x" size=${14} sw=${2.6} /></button><button class="dock-grow" onClick=${() => setBig(true)}>Ampliar</button>`}
+    ${mode === 'mini' && html`<div class="dock-grip" onPointerDown=${dragStart} onPointerMove=${dragMove} onPointerUp=${dragEnd} onPointerCancel=${dragEnd} aria-label="Mover el reproductor"></div><button class="dock-x" onClick=${stopPlayer} aria-label="Cerrar el reproductor"><${Icon} name="x" size=${14} sw=${2.6} /></button><button class="dock-grow" onClick=${() => setBig(true)}>Ampliar</button>`}
   </div>`;
 }
 
