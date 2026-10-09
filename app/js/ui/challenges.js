@@ -35,7 +35,14 @@ export function ChallengeCard({ c, compact }) {
     else if (c.status === 'started') action = html`<button class="btn primary block" onClick=${() => setSheet('record')}><${Icon} name=${c.proof === 'photo' ? 'camera' : 'video'} size=${18} /> ${c.proof === 'photo' ? 'Enviar foto' : c.proof === 'video' ? 'Enviar video' : 'Enviar evidencia'}</button>`;
     else if (c.status === 'rejected') action = html`<button class="btn primary block" onClick=${start}>Intentarlo de nuevo</button>`;
   } else if (c.status === 'submitted') action = html`<button class="btn primary block" onClick=${() => setSheet('review')}><${Icon} name="check" size=${18} sw=${2.6} /> Revisar evidencia</button>`;
-  else if (['open', 'started', 'rejected'].includes(c.status)) action = html`<button class="btn tinted block" onClick=${cancel}>Cancelar reto</button>`;
+  else if (['open', 'started', 'rejected'].includes(c.status)) {
+    action = html`<div class="idea-actions"><button class="btn primary" onClick=${() => setSheet('remind')}><${Icon} name="bell" size=${16} /> ${c.reminder && !c.reminder.settled ? 'Cambiar límite' : 'Recordarle'}</button><button class="btn tinted" onClick=${cancel}>Cancelar reto</button></div>`;
+  }
+  const pending = ['open', 'started', 'rejected'].includes(c.status);
+  const rem = c.reminder;
+  const limit = rem && pending && !rem.settled
+    ? html`<p class="limit-note">⏰ ${mine ? `Tienes hasta el ${fmtDay(rem.date)}: si no lo cumples pierdes ${L.LATE_PENALTY} puntos` : `${nameOf(c.to)} tiene hasta el ${fmtDay(rem.date)}: si no lo cumple pierde ${L.LATE_PENALTY} puntos`}</p>`
+    : rem?.settled === 'late' ? html`<p class="limit-note bad">⏰ ${mine ? `No lo cumpliste a tiempo · −${L.LATE_PENALTY} puntos` : `${nameOf(c.to)} no lo cumplió a tiempo · −${L.LATE_PENALTY} puntos`}</p>` : null;
 
   const sub = mine
     ? { open: `${nameOf(c.from)} te reta`, started: 'Reto en curso', submitted: `Esperando que ${nameOf(c.from)} lo revise`, approved: `Cumplido · ganaste ${c.points}`, rejected: c.note ? `Para repetir: “${c.note}”` : 'Para repetir', cancelled: 'Cancelado' }[c.status]
@@ -50,12 +57,37 @@ export function ChallengeCard({ c, compact }) {
       </div>
       <${Points} n=${c.points} class=${cx(c.status === 'approved' && 'won')} />
     </div>
+    ${limit}
     ${action}
     ${c.evidence && !c.evidence.removed && !(c.status === 'submitted' && !mine) && ['submitted', 'approved'].includes(c.status) && html`<button class="btn tinted sm ch-view" onClick=${() => setSheet('view')}><${Icon} name="eye" size=${16} /> Ver evidencia</button>`}
+    ${sheet === 'remind' && html`<${RemindSheet} c=${c} onClose=${() => setSheet(null)} />`}
     ${sheet === 'view' && html`<${ReviewSheet} c=${c} viewOnly onClose=${() => setSheet(null)} />`}
     ${sheet === 'record' && html`<${EvidenceSheet} c=${c} onClose=${() => setSheet(null)} />`}
     ${sheet === 'review' && html`<${ReviewSheet} c=${c} onClose=${() => setSheet(null)} />`}
   </article>`;
+}
+
+// ============ recordarle un reto con límite ============
+function RemindSheet({ c, onClose }) {
+  const today = L.ymd();
+  const name = S.state.partner?.name || 'tu pareja';
+  const [date, setDate] = useState(c.reminder && !c.reminder.settled && c.reminder.date >= today ? c.reminder.date : today);
+  const [busy, setBusy] = useState(false);
+  const quick = [['Hoy', 0], ['Mañana', 1], ['En 2 días', 2], ['En 3 días', 3], ['En una semana', 7]];
+  const send = async () => {
+    setBusy(true);
+    const r = await S.remindChallenge(c.id, date);
+    setBusy(false);
+    if (r.ok) { toast(`Recordatorio enviado a ${name}`, { icon: '⏰', body: `Tiene hasta el ${fmtDay(date)}` }); onClose(); } else toast(r.data.error, { icon: '⚠️' });
+  };
+  return html`<${Sheet} title="Recordarle el reto" onClose=${onClose}>
+    <p class="muted"><b>${c.title}</b> · ${name} aún no lo cumple. Le llega una notificación al teléfono con el límite que pongas.</p>
+    <h3 class="sec-h">¿Hasta cuándo tiene?</h3>
+    <div class="chips wrap">${quick.map(([label, n]) => html`<button type="button" class=${cx('chip pick', date === L.addDays(today, n) && 'on')} onClick=${() => setDate(L.addDays(today, n))}>${label}</button>`)}</div>
+    <${Field} label="O elige otro día"><input type="date" min=${today} value=${date} onInput=${(e) => e.target.value && setDate(e.target.value)} /><//>
+    <p class="limit-note">Si no lo cumple antes de que termine el ${fmtDay(date)}, pierde <b>${L.LATE_PENALTY} puntos de amor</b>.</p>
+    <button class="btn primary block lg" disabled=${busy || date < today} onClick=${send}>${busy ? 'Enviando…' : 'Enviar recordatorio'}</button>
+  <//>`;
 }
 
 // ============ grabar o elegir evidencia ============

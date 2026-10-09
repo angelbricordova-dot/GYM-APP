@@ -973,3 +973,7 @@ button.mo-cell:disabled { opacity: 1; }
 .dock-opts { display: flex; gap: 8px; flex-wrap: wrap; }
 @media (prefers-reduced-motion: reduce) { .dock-beat { animation: none; } }
 .dock-opts .chip { padding: 0 10px; font-size: 14px; gap: 4px; }
+
+.limit-note { margin: 8px 0 4px; padding: 8px 12px; border-radius: 12px; font-size: 14px; background: color-mix(in srgb, var(--warn, #ff9f0a) 14%, transparent); }
+.limit-note.bad { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+.challenge .idea-actions { margin-top: 10px; }

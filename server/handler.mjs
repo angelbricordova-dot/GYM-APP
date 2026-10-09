@@ -13,7 +13,7 @@ const db = createStorage();
 const push = createPush(db);
 const music = createMusic(db);
 const reply = (r) => (r.error ? fail(r.status || 409, r.error) : json(200, r));
-export const runReminders = (now) => push.runReminders(now);
+export const runReminders = async (now) => { const r = await push.runReminders(now); await settleLate(now ? +now : Date.now()); return r; };
 const TOKEN_DAYS = 180;
 const MAX_DOC = 1_500_000;
 const MAX_PHOTO = 3_000_000;
@@ -338,6 +338,7 @@ async function listItems(prefix, limit, sp) {
 }
 
 async function sync(user, url) {
+  if ((await settleLate()) > 0) user = await db.get(`user/${user.id}`); // límites vencidos: se aplican antes de responder
   const meta = await getMeta();
   const sp = spaceOf(meta, user.id);
   const partnerId = sp?.users.find((id) => id !== user.id);
@@ -597,6 +598,44 @@ async function deleteMessage(user, id) {
 // Los puntos de amor los suma el cliente de quien lo cumplió cuando ve el reto aprobado (cada quien escribe solo su documento).
 const challengeKey = (c) => `challenge/${String(c.ts).padStart(13, '0')}-${c.id}`;
 
+/** Fin del día `date` (YYYY-MM-DD) en la zona horaria `tz`, en milisegundos. */
+function endOfDay(date, tz = 'UTC') {
+  const next = Date.parse(`${date}T00:00:00Z`) + 864e5; // medianoche UTC siguiente
+  try {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(new Date(next)).map((p) => [p.type, p.value]));
+    const asUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
+    return next - (asUtc - next); // medianoche local del día siguiente
+  } catch { return next; }
+}
+
+/** Revisa los retos con límite vencido: si no los cumplió a tiempo, pierde puntos (una sola vez). `only`: ids de retos a revisar (si no, todos). */
+async function settleLate(now = Date.now(), only = null) {
+  let n = 0;
+  for (const key of await db.list('challenge/')) {
+    if (only && !only.some((id) => key.endsWith(`-${id}`))) continue;
+    const c = await db.get(key);
+    const r = c?.reminder;
+    if (!r || r.settled || now < r.expiresAt) continue;
+    const onTime = c.status === 'approved' || (c.evidence?.ts && c.evidence.ts <= r.expiresAt);
+    r.settled = c.status === 'cancelled' ? 'void' : onTime ? 'met' : 'late';
+    if (r.settled === 'late') {
+      const lazy = await db.get(`user/${c.to}`);
+      if (lazy) {
+        lazy.doc.ledger = lazy.doc.ledger || [];
+        lazy.doc.ledger.push({ id: randomUUID(), ts: now, key: `bank:late:${c.id}`, delta: -L.LATE_PENALTY, reason: `No cumplió a tiempo: ${String(c.title).slice(0, 50)}`, date: new Date(now).toISOString().slice(0, 10) });
+        lazy.doc.updatedAt = Math.max(now, (lazy.doc.updatedAt || 0) + 1);
+        await db.set(`user/${lazy.id}`, lazy);
+        await push.notify(c.to, { type: 'challenges', title: `Se acabó el tiempo del reto ⏰ −${L.LATE_PENALTY} puntos`, body: c.title, url: '/?tab=today' });
+        await push.notify(c.from, { type: 'challenges', title: `${first(lazy.name)} no cumplió a tiempo: “${c.title}”`, body: `Se le quitaron ${L.LATE_PENALTY} puntos de amor`, url: '/?tab=today' });
+      }
+    }
+    c.reminder = r; c.updatedAt = now;
+    await db.set(key, c);
+    n++;
+  }
+  return n;
+}
+
 async function loadChallenge(id) {
   const key = await findKey('challenge/', id);
   return key ? { key, c: await db.get(key) } : null;
@@ -645,6 +684,18 @@ async function challengeAction(user, id, action, req, url, body) {
     if (body.action === 'approve') { c.status = 'approved'; c.approvedAt = Date.now(); }
     else if (body.action === 'reject') { c.status = 'rejected'; c.note = clean(body.note, 140); }
     else return fail(400, 'Acción inválida.');
+  } else if (action === 'remind') {
+    // “Recordarle”: se avisa por notificación y se fija un límite; si no lo cumple a tiempo pierde LATE_PENALTY puntos
+    if (!isFrom) return fail(403, 'Solo quien puso el reto puede recordárselo.');
+    if (!['open', 'started', 'rejected'].includes(c.status)) return fail(409, 'Este reto ya no está pendiente.');
+    if (c.reminder?.settled) return fail(409, 'El límite de este reto ya venció.');
+    const date = String(body.date || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) return fail(400, 'Elige hasta cuándo tiene.');
+    const target = await db.get(`user/${c.to}`);
+    const expiresAt = endOfDay(date, target?.doc?.tz);
+    if (expiresAt <= Date.now()) return fail(400, 'Elige hoy o un día que no haya pasado.');
+    if (expiresAt > Date.now() + 31 * 864e5) return fail(400, 'Ese límite queda muy lejos (máximo 30 días).');
+    c.reminder = { date, expiresAt, ts: Date.now(), count: (c.reminder?.count || 0) + 1, settled: null };
   } else if (action === 'cancel') {
     if (!isFrom) return fail(403, 'Solo quien puso el reto puede cancelarlo.');
     if (c.status === 'approved') return fail(409, 'Un reto aprobado ya no se puede cancelar.');
@@ -653,7 +704,8 @@ async function challengeAction(user, id, action, req, url, body) {
   c.updatedAt = Date.now();
   await db.set(key, c);
   const other = isTo ? c.from : c.to;
-  if (action === 'evidence') await push.notify(other, { type: 'challenges', title: `${first(user.name)} envió su evidencia 📹`, body: `${c.title}: revísala y apruébala`, url: '/?tab=today' });
+  if (action === 'remind') await push.notify(other, { type: 'challenges', title: `⏰ ${first(user.name)} te recuerda un reto`, body: `${c.title}: tienes hasta el ${c.reminder.date.split('-').reverse().slice(0, 2).join('/')}. Si no lo cumples pierdes ${L.LATE_PENALTY} puntos de amor`, url: '/?tab=today', tag: `late-${c.id}` });
+  else if (action === 'evidence') await push.notify(other, { type: 'challenges', title: `${first(user.name)} envió su evidencia 📹`, body: `${c.title}: revísala y apruébala`, url: '/?tab=today' });
   else if (action === 'review') await push.notify(other, { type: 'challenges', title: c.status === 'approved' ? `¡Reto aprobado! +${c.points} puntos de amor 💗` : 'Te pidieron repetir el reto', body: c.status === 'approved' ? c.title : c.note || c.title, url: '/?tab=today' });
   return json(200, { challenge: c });
 }
@@ -983,7 +1035,7 @@ export default async function handler(req) {
     if (m === 'POST' && path === '/auth/google/link') return await linkGoogle(user, await body());
     if (m === 'POST' && path === '/auth/pin') return await setPin(user, await body());
     if (m === 'POST' && path === '/challenges') return await postChallenge(user, await body());
-    if (m === 'POST' && (r = path.match(/^\/challenges\/([^/]+)\/(start|evidence|review|cancel)$/))) return await challengeAction(user, r[1], r[2], req, url, r[2] === 'review' ? await body() : {});
+    if (m === 'POST' && (r = path.match(/^\/challenges\/([^/]+)\/(start|evidence|review|cancel|remind)$/))) return await challengeAction(user, r[1], r[2], req, url, ['review', 'remind'].includes(r[2]) ? await body() : {});
     if (m === 'GET' && (r = path.match(/^\/challenges\/([^/]+)\/evidence$/))) return await getEvidence(user, r[1]);
     if (m === 'POST' && (r = path.match(/^\/messages\/([^/]+)\/like$/))) return await likeMessage(user, r[1]);
     if (m === 'POST' && (r = path.match(/^\/messages\/([^/]+)\/star$/))) return await starMessage(user, r[1]);
