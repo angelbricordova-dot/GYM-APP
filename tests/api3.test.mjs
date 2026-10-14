@@ -179,6 +179,36 @@ test('“lo haré más tarde”: el día estimado (a partir de las 9) se le recu
   assert.equal((await runReminders(new Date(`${day}T15:00:00Z`))).sent, 0); // solo una vez
 });
 
+test('suplementos a las 8 de la noche: solo si falta marcar algo, una vez al día y respeta el ajuste', async () => {
+  const at = (iso) => new Date(iso);
+  const supp = () => sent.filter((m) => /suplementos/i.test(m.title));
+  sent.length = 0;
+  // 19:00 en CDMX: todavía no (aunque falte todo)
+  await runReminders(at('2026-10-09T01:00:00Z'));
+  assert.equal(supp().length, 0);
+  // 20:00 en CDMX (día 2026-10-08), sin marcar nada → aviso con lo que falta
+  await runReminders(at('2026-10-09T02:00:00Z'));
+  assert.equal(supp().length, 1);
+  assert.equal(supp()[0].endpoint, 'https://push.example/B3');
+  assert.match(supp()[0].body, /creatina y proteína/);
+  await runReminders(at('2026-10-09T03:00:00Z')); // una sola vez al día
+  assert.equal(supp().length, 1);
+  // día siguiente: ya marcó creatina y proteína → no llega nada
+  await saveDoc(B.token, { suppLog: { '2026-10-09': ['creatina', 'proteina'] } });
+  await runReminders(at('2026-10-10T02:00:00Z'));
+  assert.equal(supp().length, 1);
+  // otro día: marcó solo la creatina → avisa por la proteína
+  await saveDoc(B.token, { suppLog: { '2026-10-10': ['creatina'] } });
+  await runReminders(at('2026-10-11T02:00:00Z'));
+  assert.equal(supp().length, 2);
+  assert.match(supp()[1].body, /proteína/);
+  assert.doesNotMatch(supp()[1].body, /creatina/);
+  // si lo apaga en Notificaciones, no llega
+  await call('POST', '/push/prefs', { token: B.token, body: { supps: false } });
+  await runReminders(at('2026-10-12T02:00:00Z'));
+  assert.equal(supp().length, 2);
+});
+
 test('rutinas compartidas: enviar, ver, guardar y quitar', async () => {
   const body = { name: 'Empuje', note: 'Pruébala', exercises: [{ name: 'Press banca', sets: 4, reps: 8 }, 'Fondos', { name: '' }] };
   assert.equal((await call('POST', '/routines', { token: A.token, body: { name: '', exercises: [] } })).status, 400);

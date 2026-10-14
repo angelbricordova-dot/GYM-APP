@@ -6,7 +6,8 @@ import * as L from '../app/js/logic.js';
 /** Punto de envío intercambiable (las pruebas lo reemplazan para no llamar a Apple/Google). */
 export const _push = { send: (sub, payload, opts) => webpush.sendNotification(sub, payload, opts) };
 
-export const DEFAULT_PREFS = { challenges: true, notes: true, workouts: true, routines: true, prizes: true, reminder: false, reminderHour: 18 };
+export const DEFAULT_PREFS = { challenges: true, notes: true, workouts: true, routines: true, prizes: true, supps: true, reminder: false, reminderHour: 18 };
+export const SUPP_REMINDER_HOUR = 20; // 8 de la noche, hora de cada persona
 const TIMEOUT_MS = 7000;
 
 /** Promesa con tope de tiempo (y sin dejar el temporizador colgado). */
@@ -54,7 +55,7 @@ export function createPush(db) {
 
   async function setPrefs(user, p = {}) {
     const next = { ...DEFAULT_PREFS, ...user.pushPrefs };
-    for (const k of ['challenges', 'notes', 'workouts', 'routines', 'prizes', 'reminder']) if (typeof p[k] === 'boolean') next[k] = p[k];
+    for (const k of ['challenges', 'notes', 'workouts', 'routines', 'prizes', 'supps', 'reminder']) if (typeof p[k] === 'boolean') next[k] = p[k];
     if (Number.isInteger(p.reminderHour) && p.reminderHour >= 0 && p.reminderHour <= 23) next.reminderHour = p.reminderHour;
     user.pushPrefs = next;
     await db.set(`user/${user.id}`, user);
@@ -126,10 +127,35 @@ export function createPush(db) {
     return sent;
   }
 
+  /** Suplementos: a las 8 de la noche (hora de cada quien), una vez al día, solo si aún le falta marcar alguno de hoy. Si ya los marcó todos no se manda nada. */
+  async function runSuppReminders(meta, now) {
+    let sent = 0;
+    for (const id of meta?.users || []) {
+      const user = await db.get(`user/${id}`);
+      const prefs = { ...DEFAULT_PREFS, ...user?.pushPrefs };
+      if (!user?.push?.length || prefs.supps === false) continue;
+      let hour, date;
+      try {
+        const tz = user.doc.tz || 'UTC';
+        hour = Number(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hourCycle: 'h23', timeZone: tz }).format(now));
+        date = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now);
+      } catch { continue; }
+      // desde las 8 y hasta antes de medianoche (si una revisión se retrasa, se manda en la siguiente); una sola vez por día
+      if (hour < SUPP_REMINDER_HOUR || user.lastSuppReminder === date) continue;
+      const taken = L.suppTaken(user.doc, date);
+      const missing = L.suppList(user.doc).filter((x) => !taken.has(x.id)).map((x) => x.name.toLowerCase());
+      if (!missing.length) continue; // ya tomó todo: no hay aviso
+      const list = missing.length > 1 ? `${missing.slice(0, -1).join(', ')} y ${missing.at(-1)}` : missing[0];
+      const r = await notify(id, { type: 'supps', title: '💊 ¿Ya tomaste tus suplementos?', body: `Hoy aún no marcas: ${list}. Si los tomaste, márcalo para que no se te olvide.`, url: '/?tab=today', tag: 'supps' });
+      if (r.sent) { const fresh = await db.get(`user/${id}`); fresh.lastSuppReminder = date; await db.set(`user/${id}`, fresh); sent++; }
+    }
+    return sent;
+  }
+
   /** Recordatorio diario: una vez al día, a la hora local elegida, si aún no entrenaste. Se corre cada hora (función programada). */
   async function runReminders(now = new Date()) {
     const meta = await db.get('meta');
-    let sent = await runLaterReminders(meta, now);
+    let sent = (await runLaterReminders(meta, now)) + (await runSuppReminders(meta, now));
     for (const id of meta?.users || []) {
       const user = await db.get(`user/${id}`);
       const prefs = { ...DEFAULT_PREFS, ...user?.pushPrefs };

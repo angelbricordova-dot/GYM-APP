@@ -185,11 +185,12 @@ const KINDS = [
   ['workouts', 'Entrenos de tu pareja', 'Cuando termina su entreno del día'],
   ['routines', 'Rutinas', 'Te recomiendan una rutina'],
   ['prizes', 'Premios', 'Ideas, contraofertas y canjes'],
+  ['supps', 'Suplementos a las 8 de la noche', 'Si aún no marcaste lo de hoy (creatina, proteína…)'],
 ];
 
 function Notifications({ acc }) {
   const sup = pushSupport();
-  const prefs = acc.push?.prefs || { challenges: true, notes: true, workouts: true, routines: true, prizes: true, reminder: false, reminderHour: 18 };
+  const prefs = acc.push?.prefs || { challenges: true, notes: true, workouts: true, routines: true, prizes: true, supps: true, reminder: false, reminderHour: 18 };
   const [on, setOn] = useState(null); // este teléfono está suscrito
   const [busy, setBusy] = useState(false);
   const [diag, setDiag] = useState(null); // { local, registered, devices, endpoint }
