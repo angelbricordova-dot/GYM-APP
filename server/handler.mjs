@@ -16,7 +16,7 @@ const reply = (r) => (r.error ? fail(r.status || 409, r.error) : json(200, r));
 export const runReminders = async (now) => { const r = await push.runReminders(now); await settleLate(now ? +now : Date.now()); return r; };
 const TOKEN_DAYS = 180;
 const MAX_DOC = 1_500_000;
-const MAX_PHOTO = 3_000_000;
+const MAX_PHOTO = 1_500_000; // la app ya las manda comprimidas (~200–300 KB)
 const MAX_EVIDENCE = 5_000_000;
 const EVIDENCE_TYPES = ['video/mp4', 'video/webm', 'video/quicktime', 'image/jpeg'];
 
@@ -374,6 +374,9 @@ async function putMe(user, req) {
   if (typeof doc.tz !== 'string' || doc.tz.length > 60) doc.tz = user.doc.tz || 'UTC';
   const before = new Set(Object.keys(user.doc.checkins || {}));
   const added = Object.keys(doc.checkins || {}).filter((d) => !before.has(d));
+  // fotos de check-ins que ya no están en el documento (se borró el check-in): se liberan del almacenamiento
+  const keep = new Set(Object.values(doc.checkins || {}).map((c) => c?.photo).filter(Boolean));
+  for (const c of Object.values(user.doc.checkins || {})) if (c?.photo && !keep.has(c.photo) && /^[a-z0-9-]{6,40}$/.test(c.photo)) await db.del(`photo/${user.id}/${c.photo}`);
   user.doc = doc;
   user.name = doc.name;
   await db.set(`user/${user.id}`, user);

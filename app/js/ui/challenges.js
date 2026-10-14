@@ -1,7 +1,7 @@
 import { html, useState, useEffect, useRef } from '../../vendor/preact-htm.js';
 import * as S from '../store.js';
 import * as L from '../logic.js';
-import { processImage, fixWebmDuration } from '../photos.js';
+import { processImage, compressVideo, fixWebmDuration } from '../photos.js';
 import { Icon, Points, Sheet, Stepper, Field, Empty, Segmented, SaveButton, toast, cx, fmtDay } from './kit.js';
 
 const IDEAS = ['10 flexiones', '20 sentadillas', 'Plancha 1 minuto', '30 abdominales', '15 min de caminata', '10 min de estiramiento'];
@@ -127,6 +127,7 @@ function EvidenceSheet({ c, onClose }) {
   const [hadAudio, setHadAudio] = useState(false); // ¿el video grabado lleva audio?
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [comp, setComp] = useState(null); // % de avance al comprimir un video del carrete
   const canRecord = typeof MediaRecorder !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
   const canCamera = !!navigator.mediaDevices?.getUserMedia;
 
@@ -153,7 +154,7 @@ function EvidenceSheet({ c, onClose }) {
     if (!canCamera || blob) return;
     let off = false;
     stopCamera();
-    const video = { facingMode: facing, width: { ideal: mode === 'photo' ? 1280 : 640 }, height: { ideal: mode === 'photo' ? 960 : 480 } };
+    const video = { facingMode: facing, width: { ideal: mode === 'photo' ? 1280 : 960 }, height: { ideal: mode === 'photo' ? 960 : 720 } };
     const open = async () => {
       let s;
       if (mode === 'video' && canRecord) {
@@ -186,7 +187,7 @@ function EvidenceSheet({ c, onClose }) {
       const mimeType = REC_TYPES.find((t) => MediaRecorder.isTypeSupported?.(t)) || '';
       chunks.current = [];
       const withAudio = stream.current.getAudioTracks().length > 0;
-      const r = new MediaRecorder(stream.current, { ...(mimeType && { mimeType }), videoBitsPerSecond: 900_000, audioBitsPerSecond: 48_000 });
+      const r = new MediaRecorder(stream.current, { ...(mimeType && { mimeType }), videoBitsPerSecond: 1_300_000, audioBitsPerSecond: 64_000 });
       rec.current = r;
       r.ondataavailable = (e) => e.data.size && chunks.current.push(e.data);
       const t0 = Date.now();
@@ -206,7 +207,7 @@ function EvidenceSheet({ c, onClose }) {
     const cv = document.createElement('canvas');
     cv.width = Math.round(v.videoWidth * k); cv.height = Math.round(v.videoHeight * k);
     cv.getContext('2d').drawImage(v, 0, 0, cv.width, cv.height);
-    cv.toBlob((b) => b && finish(b), 'image/jpeg', 0.85);
+    cv.toBlob(async (b) => b && finish(b.size > 320_000 ? await processImage(b, { max: 1080 }) : b), 'image/jpeg', 0.82);
   };
 
   const pick = async (e) => {
@@ -217,9 +218,19 @@ function EvidenceSheet({ c, onClose }) {
     try {
       if (f.type.startsWith('image/') && proof === 'video') setErr('Este reto se demuestra con un video.');
       else if (!f.type.startsWith('image/') && proof === 'photo') setErr('Este reto se demuestra con una foto.');
-      else if (f.type.startsWith('image/')) finish(await processImage(f, { max: 1080, quality: 0.8 }));
-      else if (f.size > MAX_MB * 1e6) setErr(`Ese video pesa ${(f.size / 1e6).toFixed(1)} MB (máximo ${MAX_MB}). Grábalo aquí en la app, que lo comprime.`);
-      else finish(f, true);
+      else if (f.type.startsWith('image/')) finish(await processImage(f, { max: 1080 }));
+      else {
+        // video del carrete: si pesa más de ~1.5 MB se comprime (misma imagen y sonido, mucho menos peso); si no se puede y pasa del máximo, se avisa
+        let out = { blob: f, compressed: false };
+        if (f.size > 1.5e6) {
+          setBusy(true); setComp(0);
+          out = await compressVideo(f, { onProgress: setComp });
+          setBusy(false); setComp(null);
+          if (out.tooLong) return setErr(`Ese video dura ${out.seconds} s (máximo 90 s). Recórtalo o graba uno más corto aquí.`);
+        }
+        if (out.blob.size > MAX_MB * 1e6) setErr(`Ese video pesa ${(out.blob.size / 1e6).toFixed(1)} MB y no se pudo comprimir más (máximo ${MAX_MB}). Grábalo aquí en la app o usa uno más corto.`);
+        else finish(out.blob, true);
+      }
     } catch { setErr('No pude leer ese archivo.'); }
   };
 
@@ -247,6 +258,7 @@ function EvidenceSheet({ c, onClose }) {
       ${phase === 'done' && isVideo && html`<span class=${cx('audio-chip', hadAudio ? 'on' : 'off')}><${Icon} name="mic" size=${14} /> ${hadAudio ? 'Con audio' : 'Sin audio'}</span>`}
     </div>
     ${mode === 'video' && phase !== 'done' && !audio && !noCam && html`<p class="notice">No tengo permiso del micrófono: el video saldría <b>sin audio</b>. Permite el micrófono para este sitio (iPhone: Ajustes → Safari → Micrófono) y vuelve a abrir esta pantalla.</p>`}
+    ${comp !== null && html`<p class="notice" role="status">Comprimiendo el video para que se envíe rápido… ${comp}%</p>`}
     ${err && html`<p class="notice" role="alert">${err}</p>`}
     ${phase === 'done'
       ? html`<p class="muted small center">${isVideo ? 'Míralo antes de enviarlo.' : 'Así se va a ver.'}</p>

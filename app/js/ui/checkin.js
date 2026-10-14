@@ -26,7 +26,7 @@ export function CheckIn({ session }) {
     if (!file) return;
     setBusy(true);
     try {
-      const b = await processImage(file, { max: 1080, quality: 0.8 });
+      const b = await processImage(file, { max: 1080 });
       setBlob(b);
       setPreview(URL.createObjectURL(b));
     } catch {

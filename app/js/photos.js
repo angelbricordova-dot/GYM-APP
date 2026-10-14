@@ -31,8 +31,11 @@ export const putPhoto = (id, blob) => run('readwrite', (s) => s.put(blob, id));
 export const clearAllPhotos = () => { urls.clear(); return run('readwrite', (s) => s.clear()); };
 export const getPhoto = (id) => run('readonly', (s) => s.get(id));
 
-/** Reduce una imagen a JPEG (lado mayor `max`) respetando la orientación del teléfono. */
-export async function processImage(file, { max = 1080, quality = 0.8, square = 0 } = {}) {
+/**
+ * Reduce una imagen a JPEG (lado mayor `max`) respetando la orientación del teléfono.
+ * Si pasa de `maxBytes`, baja la calidad poco a poco (y al final un poco el tamaño) hasta que quepa: casi no se nota y pesa mucho menos.
+ */
+export async function processImage(file, { max = 1080, quality = 0.82, square = 0, maxBytes = 320_000 } = {}) {
   const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }).catch(() => null);
   const img = bmp || (await new Promise((res, rej) => {
     const i = new Image();
@@ -41,20 +44,94 @@ export async function processImage(file, { max = 1080, quality = 0.8, square = 0
     i.src = URL.createObjectURL(file);
   }));
   const w = img.width, h = img.height;
-  const c = document.createElement('canvas');
-  const ctx = c.getContext('2d');
-  if (square) {
-    const side = Math.min(w, h);
-    c.width = c.height = square;
-    ctx.drawImage(img, (w - side) / 2, (h - side) / 2, side, side, 0, 0, square, square);
-  } else {
-    const k = Math.min(1, max / Math.max(w, h));
-    c.width = Math.round(w * k);
-    c.height = Math.round(h * k);
-    ctx.drawImage(img, 0, 0, c.width, c.height);
+  const toBlob = (c, q) => new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('No se pudo procesar la foto'))), 'image/jpeg', q));
+  const draw = (scale) => {
+    const c = document.createElement('canvas');
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    if (square) {
+      const side = Math.min(w, h);
+      c.width = c.height = Math.round(square * scale);
+      ctx.drawImage(img, (w - side) / 2, (h - side) / 2, side, side, 0, 0, c.width, c.height);
+    } else {
+      const k = Math.min(1, max / Math.max(w, h)) * scale;
+      c.width = Math.round(w * k);
+      c.height = Math.round(h * k);
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+    }
+    return c;
+  };
+  let scale = 1;
+  let best = null;
+  for (let pass = 0; pass < 2; pass++) {
+    const c = draw(scale);
+    for (const q of [quality, 0.74, 0.66, 0.58]) {
+      best = await toBlob(c, q);
+      if (best.size <= maxBytes) { bmp?.close?.(); return best; }
+    }
+    scale = 0.85; // aún pesa mucho (foto con mucho detalle): un poco más chica
   }
   bmp?.close?.();
-  return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('No se pudo procesar la foto'))), 'image/jpeg', quality));
+  return best;
+}
+
+/**
+ * Comprime un video del carrete: lo vuelve a codificar (máx. `maxSide` px de lado mayor y ~1.4 Mbps), con su audio.
+ * Se hace reproduciéndolo, así que tarda lo que dura. Si el navegador no puede (o sale más pesado), devuelve el original.
+ * @returns {Promise<{blob: Blob, compressed: boolean, tooLong?: boolean, seconds?: number}>}
+ */
+export async function compressVideo(file, { maxSide = 960, videoBps = 1_400_000, audioBps = 64_000, maxSecs = 90, onProgress } = {}) {
+  const same = { blob: file, compressed: false };
+  if (typeof MediaRecorder === 'undefined' || !HTMLCanvasElement.prototype.captureStream) return same;
+  const types = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+  const mimeType = types.find((t) => MediaRecorder.isTypeSupported?.(t));
+  if (!mimeType) return same;
+  const url = URL.createObjectURL(file);
+  let actx = null;
+  try {
+    const v = document.createElement('video');
+    v.playsInline = true; v.setAttribute('playsinline', ''); v.preload = 'auto'; v.src = url;
+    await new Promise((res, rej) => { v.onloadedmetadata = res; v.onerror = () => rej(new Error('video')); });
+    if (!Number.isFinite(v.duration) || !v.videoWidth) return same;
+    if (v.duration > maxSecs) return { ...same, tooLong: true, seconds: Math.round(v.duration) };
+    const k = Math.min(1, maxSide / Math.max(v.videoWidth, v.videoHeight));
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(2, Math.round((v.videoWidth * k) / 2) * 2);
+    cv.height = Math.max(2, Math.round((v.videoHeight * k) / 2) * 2);
+    const g = cv.getContext('2d');
+    const out = cv.captureStream(30);
+    // el audio original se copia por WebAudio (sin sonar en el teléfono). Si no se puede, mejor dejar el video como está que quitarle el sonido.
+    try {
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      await actx.resume();
+      const dest = actx.createMediaStreamDestination();
+      actx.createMediaElementSource(v).connect(dest);
+      dest.stream.getAudioTracks().forEach((t) => out.addTrack(t));
+    } catch { return same; }
+    const rec = new MediaRecorder(out, { mimeType, videoBitsPerSecond: videoBps, audioBitsPerSecond: audioBps });
+    const chunks = [];
+    rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    const done = new Promise((res) => { rec.onstop = res; });
+    let raf = 0;
+    const tick = () => { g.drawImage(v, 0, 0, cv.width, cv.height); onProgress?.(Math.min(99, Math.round((v.currentTime / v.duration) * 100))); raf = requestAnimationFrame(tick); };
+    const t0 = Date.now();
+    rec.start(500);
+    await v.play();
+    tick();
+    await Promise.race([new Promise((res) => { v.onended = res; }), new Promise((res) => setTimeout(res, (v.duration + 8) * 1000))]);
+    cancelAnimationFrame(raf);
+    if (rec.state !== 'inactive') rec.stop();
+    await done;
+    let blob = new Blob(chunks, { type: mimeType.split(';')[0] });
+    if (blob.type === 'video/webm') blob = await fixWebmDuration(blob, Date.now() - t0);
+    if (!blob.size || blob.size >= file.size * 0.95) return same; // no ganó nada: se queda el original
+    return { blob, compressed: true };
+  } catch {
+    return same;
+  } finally {
+    URL.revokeObjectURL(url);
+    actx?.close?.().catch(() => {});
+  }
 }
 
 /**

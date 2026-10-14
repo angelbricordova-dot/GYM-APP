@@ -158,3 +158,15 @@ test('ejercicios propios: se guardan, se limpian y le llegan a la pareja', async
   const seen = (await call('GET', '/sync?meAt=0&partnerAt=0', { token: B.token })).data.partner.doc.customExercises;
   assert.equal(seen[0].name, 'Remo Pendlay'); // ella lo ve en su lista
 });
+
+test('al borrar un check-in se libera su foto del servidor (y la foto no pasa del límite)', async () => {
+  const d = (await sync(A)).me;
+  const put = (checkins, bump) => call('PUT', '/me', { token: A.token, body: { doc: { ...d, checkins, updatedAt: d.updatedAt + bump } } });
+  assert.equal((await put({ '2026-10-01': { ts: 1, time: '10:00', photo: 'foto-uno-123', photoUp: false } }, 100)).status, 200);
+  assert.equal((await call('POST', '/photo?id=foto-uno-123', { token: A.token, raw: jpeg, type: 'image/jpeg' })).status, 200);
+  assert.equal((await call('GET', `/photo/${A.uid}/foto-uno-123`, { token: B.token })).status, 200);
+  const huge = Buffer.concat([jpeg, Buffer.alloc(1_600_000)]);
+  assert.equal((await call('POST', '/photo?id=foto-dos-456', { token: A.token, raw: huge, type: 'image/jpeg' })).status, 413);
+  assert.equal((await put({}, 200)).status, 200); // se quitó el check-in
+  assert.equal((await call('GET', `/photo/${A.uid}/foto-uno-123`, { token: B.token })).status, 404);
+});
