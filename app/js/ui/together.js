@@ -19,7 +19,7 @@ export function Together() {
   const partner = S.state.partner;
   const [other, setOther] = useState(() => !!S.state.pendingInvite);
   const [tab, setTab] = useState(() => (S.challengesForMe().length + S.challengesToReview().length > 0 ? 'challenges' : 'board'));
-  useQuiz(!!partner); // para el puntito de “Quiz” (se actualiza sola)
+  const { data: quizData } = useQuiz(!!partner); // para el puntito de “Quiz” (se actualiza sola)
   const pending = S.challengesForMe().length + S.challengesToReview().length;
   const notes = S.unread();
   const routines = S.routinesNew().length;
@@ -47,12 +47,17 @@ export function Together() {
       <span class="grow"><b>Ver el perfil de ${partner.name}</b><small class="muted">Su racha, sus fotos y su progreso</small></span>
       <${Icon} name="right" size=${16} class="chev" />
     </button>
+    ${tab !== 'quiz' && quizData && html`<button class=${cx('quiz-link', !quizData.me.answered && 'attn')} onClick=${() => setTab('quiz')}>
+      <span class="ql-ic">💞</span>
+      <span class="grow"><b>Pregunta del día</b><small class="muted">${!quizData.me.answered ? (quizData.partner.answered ? `${quizData.partner.name} ya respondió: responde y descúbrelo` : 'Respóndanla los dos y descubran qué contesta cada quien') : quizData.partner.answered ? 'Los dos ya respondieron · ver respuestas' : `Esperando a ${quizData.partner.name}…`}</small></span>
+      ${!quizData.me.answered ? html`<b class="dot-badge">1</b>` : html`<${Icon} name="right" size=${16} class="chev" />`}
+    </button>`}
     <${Segmented} value=${tab} onChange=${setTab} options=${[
       { id: 'challenges', label: 'Retos', badge: pending || null },
+      { id: 'quiz', label: 'Quiz', badge: quizPending() ? 1 : null },
       { id: 'board', label: 'Motivación', badge: notes || null },
       { id: 'routines', label: 'Rutinas', badge: routines || null },
       { id: 'supps', label: 'Suplementos' },
-      { id: 'quiz', label: 'Quiz', badge: quizPending() ? 1 : null },
     ]} />
     ${tab === 'challenges' && html`<${ChallengesPanel} />`}
     ${tab === 'board' && html`<${Board} partner=${partner} />`}

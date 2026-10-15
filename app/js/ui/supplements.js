@@ -59,7 +59,10 @@ function Nudge({ partner, pd }) {
     if (!r.ok) return toast(r.data.error || 'No se pudo enviar', { icon: r.status === 409 ? '✅' : '⚠️' });
     toast(`Recordatorio enviado a ${partner.name}`, { icon: '💊', body: r.data.devices ? undefined : `${partner.name} no tiene las notificaciones activadas: lo verá cuando abra la app` });
   };
-  return html`<button class="btn tinted block" disabled=${busy} onClick=${send}><${Icon} name="bell" size=${16} /> Recordarle a ${partner.name} que tome ${missing.map((x) => x.name.toLowerCase()).join(' y ')}</button>`;
+  return html`<div class="nudge">
+    <button class="btn tinted block" disabled=${busy} onClick=${send}><${Icon} name="bell" size=${16} /> Recordarle a ${partner.name}</button>
+    <small class="muted">Le llega una notificación para que tome ${missing.map((x) => x.name.toLowerCase()).join(' y ')}</small>
+  </div>`;
 }
 
 function PenaltyOption({ me }) {
