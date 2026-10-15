@@ -143,3 +143,9 @@ Por compatibilidad con datos ya guardados, algunas claves internas conservan el 
 En **Perfil → Música** pegas un enlace de YouTube Music (o YouTube) y suena dentro de la app; el reproductor sigue mientras cambias de pestaña. Lo que reproduces queda en tu historial y tu pareja ve “está escuchando…” en su tarjeta de Hoy y en tu perfil.
 
 YouTube Music no ofrece forma oficial de vincular la cuenta ni de leer el historial desde otras apps, por eso el historial es el de lo que se reproduce aquí. No hace falta configurar nada.
+
+## Preguntas en pareja (Quiz)
+
+Cada día sale una pregunta nueva, igual para los dos, que elige el servidor (sin repetir hasta agotar el banco de cada categoría). Aparece en **Hoy** y en **Juntos → Quiz**. Cada quien responde por su lado; la respuesta de la pareja se ve cuando ya respondiste (o elegiste “Prefiero no responder”). Hay preguntas para conocerse, recuerdos, futuro, diversión, romance, cercanía y **picantes** (3 de cada 7 días); si alguno de los dos apaga las picantes en Juntos → Quiz, ese día salen de romance. Un aviso a las 7 de la tarde (ajustable en Perfil → Notificaciones) recuerda responder; la notificación nunca incluye el texto de la pregunta. El banco está en `app/js/questions.js`: se pueden agregar preguntas ahí.
+
+En **Juntos → Suplementos** hay un botón para recordarle a tu pareja, por notificación, lo que aún no marca hoy (máx. una vez cada 30 minutos).

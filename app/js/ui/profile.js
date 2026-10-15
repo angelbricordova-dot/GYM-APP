@@ -186,11 +186,12 @@ const KINDS = [
   ['routines', 'Rutinas', 'Te recomiendan una rutina'],
   ['prizes', 'Premios', 'Ideas, contraofertas y canjes'],
   ['supps', 'Suplementos a las 8 de la noche', 'Si aún no marcaste lo de hoy (creatina, proteína…)'],
+  ['quiz', 'Pregunta del día', 'Un aviso a las 7 de la tarde si aún no respondes (y cuando tu pareja responde)'],
 ];
 
 function Notifications({ acc }) {
   const sup = pushSupport();
-  const prefs = acc.push?.prefs || { challenges: true, notes: true, workouts: true, routines: true, prizes: true, supps: true, reminder: false, reminderHour: 18 };
+  const prefs = acc.push?.prefs || { challenges: true, notes: true, workouts: true, routines: true, prizes: true, supps: true, quiz: true, reminder: false, reminderHour: 18 };
   const [on, setOn] = useState(null); // este teléfono está suscrito
   const [busy, setBusy] = useState(false);
   const [diag, setDiag] = useState(null); // { local, registered, devices, endpoint }

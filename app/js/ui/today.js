@@ -5,6 +5,7 @@ import { Icon, Flame, Avatar, Heart, Points, CountUp, puntos, toast, cx, fmtKg, 
 import { openScreen, goTab } from './nav.js';
 import { beginWorkout } from './workout.js';
 import { MusicCard } from './music.js';
+import { QuizCard } from './quiz.js';
 import { ChallengeCard, NewChallengeSheet } from './challenges.js';
 import { shareInvite, copyInvite } from '../invite.js';
 import { SkipSheet, SkipDecision } from './skip.js';
@@ -48,6 +49,8 @@ export function Today() {
       ${L.skipToday(me) && !me.checkins[L.ymd()] && html`<${SkipStatus} skip=${L.skipToday(me)} />`}
       ${!me.checkins[L.ymd()] && !L.skipToday(me) && !info.paused && html`<button class="btn bad block" onClick=${() => setSkip(true)}><${Icon} name="x" size=${18} sw=${2.8} /> Hoy no fui al gym</button>`}
     </section>
+
+    <${QuizCard} />
 
     <${PartnerCard} partner=${partner} />
 

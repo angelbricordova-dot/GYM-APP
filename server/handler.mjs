@@ -6,6 +6,7 @@ import { createStorage } from './storage.mjs';
 import { createPush, DEFAULT_PREFS } from './push.mjs';
 import { createMusic } from './music.mjs';
 import * as L from '../app/js/logic.js';
+import * as Q from '../app/js/questions.js';
 
 export { _push } from './push.mjs';
 
@@ -13,7 +14,12 @@ const db = createStorage();
 const push = createPush(db);
 const music = createMusic(db);
 const reply = (r) => (r.error ? fail(r.status || 409, r.error) : json(200, r));
-export const runReminders = async (now) => { const r = await push.runReminders(now); await settleLate(now ? +now : Date.now()); return r; };
+export const runReminders = async (now) => {
+  const r = await push.runReminders(now);
+  await settleLate(now ? +now : Date.now());
+  r.quiz = await quizReminders(now ? new Date(now) : new Date()); // aparte de `sent` (recordatorios de gym/suplementos)
+  return r;
+};
 const TOKEN_DAYS = 180;
 const MAX_DOC = 1_500_000;
 const MAX_PHOTO = 1_500_000; // la app ya las manda comprimidas (~200–300 KB)
@@ -1018,6 +1024,152 @@ async function pushRoutes(user, path, body, method) {
   return fail(404, 'Ruta no encontrada.');
 }
 
+// ---------- recordar suplementos a mi pareja ----------
+async function suppNudge(user) {
+  const pid = await partnerOf(user);
+  const rec = pid && (await db.get(`user/${pid}`));
+  if (!rec) return fail(409, 'Aún no tienes pareja vinculada.');
+  let date;
+  try { date = new Intl.DateTimeFormat('en-CA', { timeZone: rec.doc.tz || 'UTC' }).format(new Date()); } catch { date = new Date().toISOString().slice(0, 10); }
+  const taken = L.suppTaken(rec.doc, date);
+  const missing = L.suppList(rec.doc).filter((x) => !taken.has(x.id)).map((x) => x.name.toLowerCase());
+  if (!missing.length) return fail(409, `${first(rec.name)} ya marcó todo hoy 🎉`);
+  const me = await db.get(`user/${user.id}`);
+  if (me.lastSuppNudge && Date.now() - me.lastSuppNudge < 30 * 60_000) return fail(429, 'Ya le avisaste hace poco. Espera un rato para no atosigarla.');
+  me.lastSuppNudge = Date.now();
+  await db.set(`user/${user.id}`, me);
+  const list = missing.length > 1 ? `${missing.slice(0, -1).join(', ')} y ${missing.at(-1)}` : missing[0];
+  const r = await push.notify(pid, { type: 'supps', title: `💊 ${first(user.name)} te recuerda tus suplementos`, body: `Hoy aún no marcas: ${list}. Si ya los tomaste, márcalo.`, url: '/?tab=together', tag: 'supps-nudge' });
+  return json(200, { ok: true, missing, sent: r?.sent || 0, devices: (rec.push || []).length });
+}
+
+// ---------- preguntas en pareja ----------
+const QDATE = /^\d{4}-\d{2}-\d{2}$/;
+const QUIZ_WINDOW_DAYS = Number(process.env.QUIZ_DAYS) || 3; // solo hoy (según la zona de cada quien) ± un par de días; las pruebas lo amplían
+const dateOk = (d) => QDATE.test(d || '') && Math.abs(Date.parse(`${d}T12:00:00Z`) - Date.now()) < QUIZ_WINDOW_DAYS * 864e5;
+
+/** La pregunta de ese día para ese espacio: la elige el servidor (mismo resultado para los dos) y no se repite hasta agotar el banco de su categoría. */
+async function quizRecord(sp, date, spicyOk) {
+  const key = `qa/${sp.id}/${date}`;
+  let rec = await db.get(key);
+  if (rec) return rec;
+  const used = new Map();
+  for (const k of await db.list(`qa/${sp.id}/`)) { const r = await db.get(k); if (r?.qid) used.set(r.qid, r.date); }
+  const day = Math.floor(Date.parse(`${date}T00:00:00Z`) / 864e5);
+  let cat = Q.ROTATION[day % Q.ROTATION.length];
+  if (cat === 'picante' && !spicyOk) cat = 'romance'; // si alguno de los dos apagó las picantes
+  let pool = Q.QUESTIONS.filter((q) => q.cat === cat);
+  const fresh = pool.filter((q) => !used.has(q.id));
+  pool = fresh.length ? fresh : [...pool].sort((a, b) => (used.get(a.id) || '').localeCompare(used.get(b.id) || '')).slice(0, Math.ceil(pool.length / 2));
+  const h = createHash('sha256').update(`${sp.id}:${date}`).digest().readUInt32BE(0);
+  rec = { date, qid: pool[h % pool.length].id, answers: {}, ts: Date.now() };
+  await db.set(key, rec);
+  return rec;
+}
+
+const answerView = (q, a) => (a ? { answered: true, skipped: !!a.skipped, value: a.skipped ? null : a.value, text: a.skipped ? '' : Q.answerText(q, a.value) } : { answered: false });
+function quizView(rec, user, partnerRec) {
+  const q = Q.questionById(rec.qid);
+  const mine = rec.answers[user.id];
+  const theirs = rec.answers[partnerRec.id];
+  const pv = answerView(q, theirs);
+  if (!mine) { delete pv.value; delete pv.text; } // su respuesta se ve solo después de responder (o decidir no responder)
+  return {
+    date: rec.date,
+    q: { id: q.id, cat: q.cat, type: q.type, text: q.text, options: q.options || null, low: q.low || null, high: q.high || null },
+    me: answerView(q, mine),
+    partner: { name: partnerRec.name, ...pv },
+    spicy: user.quizSpicy !== false,
+    bothSpicy: user.quizSpicy !== false && partnerRec.quizSpicy !== false,
+  };
+}
+
+async function quizContext(user) {
+  const sp = await mySpace(user);
+  const pid = sp?.users.find((id) => id !== user.id);
+  const partnerRec = pid && (await db.get(`user/${pid}`));
+  return sp && partnerRec ? { sp, partnerRec } : null;
+}
+
+async function quizToday(user, url) {
+  const date = url.searchParams.get('date');
+  if (!dateOk(date)) return fail(400, 'Fecha inválida.');
+  const ctx = await quizContext(user);
+  if (!ctx) return fail(409, 'Las preguntas son en pareja: vincula a tu pareja primero.');
+  const rec = await quizRecord(ctx.sp, date, user.quizSpicy !== false && ctx.partnerRec.quizSpicy !== false);
+  return json(200, quizView(rec, user, ctx.partnerRec));
+}
+
+async function quizAnswer(user, body) {
+  const date = String(body.date || '');
+  if (!dateOk(date)) return fail(400, 'Fecha inválida.');
+  const ctx = await quizContext(user);
+  if (!ctx) return fail(409, 'Vincula a tu pareja primero.');
+  const key = `qa/${ctx.sp.id}/${date}`;
+  const rec = await db.get(key);
+  if (!rec) return fail(404, 'Esa pregunta aún no existe.');
+  if (rec.answers[user.id]) return fail(409, 'Ya respondiste esta pregunta.');
+  const q = Q.questionById(rec.qid);
+  let a;
+  if (body.skip) a = { skipped: true, ts: Date.now() };
+  else {
+    const value = Q.cleanAnswer(q, body.value);
+    if (value === null) return fail(400, 'Esa respuesta no es válida.');
+    a = { value, ts: Date.now() };
+  }
+  rec.answers[user.id] = a;
+  await db.set(key, rec);
+  const both = !!rec.answers[ctx.partnerRec.id];
+  if (!a.skipped) {
+    await push.notify(ctx.partnerRec.id, { type: 'quiz', title: both ? `💞 ${first(user.name)} y tú ya respondieron` : `💬 ${first(user.name)} ya respondió la pregunta del día`, body: both ? 'Entra para ver sus respuestas' : 'Responde para ver qué contestó', url: '/?tab=today', tag: 'quiz' });
+  }
+  return json(200, quizView(rec, user, ctx.partnerRec));
+}
+
+async function quizHistory(user) {
+  const ctx = await quizContext(user);
+  if (!ctx) return json(200, { items: [] });
+  const out = [];
+  for (const k of (await db.list(`qa/${ctx.sp.id}/`)).sort().reverse().slice(0, 60)) {
+    const rec = await db.get(k);
+    if (rec?.answers[user.id]) out.push(quizView(rec, user, ctx.partnerRec)); // solo las que ya respondí
+  }
+  return json(200, { items: out });
+}
+
+async function quizSettings(user, body) {
+  const u = await db.get(`user/${user.id}`);
+  u.quizSpicy = body.spicy !== false;
+  await db.set(`user/${user.id}`, u);
+  return json(200, { ok: true, spicy: u.quizSpicy });
+}
+
+/** Aviso de la tarde (7 pm de cada quien): si aún no respondió la pregunta del día. El texto de la pregunta no sale en la notificación. */
+async function quizReminders(now) {
+  const meta = await db.get('meta');
+  let sent = 0;
+  for (const id of meta?.users || []) {
+    const user = await db.get(`user/${id}`);
+    const prefs = { ...DEFAULT_PREFS, ...user?.pushPrefs };
+    if (!user?.push?.length || prefs.quiz === false) continue;
+    let hour, date;
+    try {
+      const tz = user.doc.tz || 'UTC';
+      hour = Number(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hourCycle: 'h23', timeZone: tz }).format(now));
+      date = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now);
+    } catch { continue; }
+    if (hour < 19 || user.lastQuizReminder === date) continue;
+    const ctx = await quizContext(user);
+    if (!ctx) continue;
+    const rec = await quizRecord(ctx.sp, date, user.quizSpicy !== false && ctx.partnerRec.quizSpicy !== false);
+    if (rec.answers[user.id]) continue;
+    const theirs = rec.answers[ctx.partnerRec.id];
+    const r = await push.notify(id, { type: 'quiz', title: '💞 Pregunta del día', body: theirs && !theirs.skipped ? `${first(ctx.partnerRec.name)} ya respondió. Responde para ver qué contestó` : 'Hay una pregunta nueva para los dos. ¡Respóndela!', url: '/?tab=today', tag: 'quiz-day' });
+    if (r.sent) { const fresh = await db.get(`user/${id}`); fresh.lastQuizReminder = date; await db.set(`user/${id}`, fresh); sent++; }
+  }
+  return sent;
+}
+
 // ---------- router ----------
 export default async function handler(req) {
   try {
@@ -1055,6 +1207,11 @@ export default async function handler(req) {
       if (b.jam && r.item) await tell(user, { type: 'notes', title: `🎧 ${first(user.name)} se unió a tu música`, body: r.item.title, url: '/?tab=today', tag: 'jam' }); // Jam: se unió a lo que ella escucha
       return reply(r);
     }
+    if (m === 'POST' && path === '/supps/remind') return await suppNudge(user);
+    if (m === 'GET' && path === '/quiz/today') return await quizToday(user, url);
+    if (m === 'POST' && path === '/quiz/answer') return await quizAnswer(user, await body());
+    if (m === 'GET' && path === '/quiz/history') return await quizHistory(user);
+    if (m === 'POST' && path === '/quiz/settings') return await quizSettings(user, await body());
     if (m === 'POST' && path === '/music/stop') return reply(await music.stop(user));
     if (m === 'GET' && path === '/music/partner') {
       const pid = await partnerOf(user);

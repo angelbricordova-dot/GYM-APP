@@ -38,10 +38,28 @@ export function SuppPanel() {
           const on = L.suppTaken(pd).has(x.id);
           return html`<div class=${cx('supp-row ro', on && 'on')}><span class="supp-ic">${x.emoji}</span><span class="grow"><b>${x.name}</b><small class="muted">${on ? 'Ya se lo tomó' : 'Todavía no'}</small></span><span class="supp-tick"><${Icon} name=${on ? 'check' : 'x'} size=${18} sw=${3} /></span></div>`;
         })}</div>
-        <${Week} doc=${pd} />`}
+        <${Week} doc=${pd} />
+        <${Nudge} partner=${partner} pd=${pd} />`}
     </section>`}
     ${sheet && html`<${AddSupp} me=${me} onClose=${() => setSheet(false)} />`}
   </div>`;
+}
+
+/** “Recordarle”: le llega una notificación a mi pareja si hoy aún no marca sus suplementos. */
+function Nudge({ partner, pd }) {
+  const [busy, setBusy] = useState(false);
+  const taken = L.suppTaken(pd);
+  const missing = L.suppList(pd).filter((x) => !taken.has(x.id));
+  if (!L.suppList(pd).length) return null;
+  if (!missing.length) return html`<p class="muted small center">✅ ${partner.name} ya marcó todo hoy</p>`;
+  const send = async () => {
+    setBusy(true);
+    const r = await S.request('POST', '/supps/remind');
+    setBusy(false);
+    if (!r.ok) return toast(r.data.error || 'No se pudo enviar', { icon: r.status === 409 ? '✅' : '⚠️' });
+    toast(`Recordatorio enviado a ${partner.name}`, { icon: '💊', body: r.data.devices ? undefined : `${partner.name} no tiene las notificaciones activadas: lo verá cuando abra la app` });
+  };
+  return html`<button class="btn tinted block" disabled=${busy} onClick=${send}><${Icon} name="bell" size=${16} /> Recordarle a ${partner.name} que tome ${missing.map((x) => x.name.toLowerCase()).join(' y ')}</button>`;
 }
 
 function PenaltyOption({ me }) {

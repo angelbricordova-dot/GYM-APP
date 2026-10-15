@@ -12,12 +12,14 @@ import { openScreen, closeScreen } from './nav.js';
 import { Summary, PhotoStrip, Gallery } from './progress.js';
 import { DaySheet } from './calendar.js';
 import { usePartnerMusic, ListeningLine } from './music.js';
+import { QuizPanel, useQuiz, quizPending } from './quiz.js';
 
 /** Todo lo de a dos: retos del día, tablero de motivación y rutinas recomendadas. El perfil de mi pareja se abre desde su foto. */
 export function Together() {
   const partner = S.state.partner;
   const [other, setOther] = useState(() => !!S.state.pendingInvite);
   const [tab, setTab] = useState(() => (S.challengesForMe().length + S.challengesToReview().length > 0 ? 'challenges' : 'board'));
+  useQuiz(!!partner); // para el puntito de “Quiz” (se actualiza sola)
   const pending = S.challengesForMe().length + S.challengesToReview().length;
   const notes = S.unread();
   const routines = S.routinesNew().length;
@@ -50,11 +52,13 @@ export function Together() {
       { id: 'board', label: 'Motivación', badge: notes || null },
       { id: 'routines', label: 'Rutinas', badge: routines || null },
       { id: 'supps', label: 'Suplementos' },
+      { id: 'quiz', label: 'Quiz', badge: quizPending() ? 1 : null },
     ]} />
     ${tab === 'challenges' && html`<${ChallengesPanel} />`}
     ${tab === 'board' && html`<${Board} partner=${partner} />`}
     ${tab === 'routines' && html`<${RoutinesPanel} />`}
     ${tab === 'supps' && html`<${SuppPanel} />`}
+    ${tab === 'quiz' && html`<${QuizPanel} />`}
   </div>`;
 }
 

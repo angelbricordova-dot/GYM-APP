@@ -53,7 +53,7 @@ test('recordar un reto: solo quien lo puso, con fecha válida, y le llega una no
   const after = (await call('GET', '/sync', { token: A.token })).data.challenges.find((x) => x.id === c.id);
   assert.equal(after.reminder.settled, 'late');
   assert.equal((await remind(A, day(9))).status, 409); // ya venció
-  assert.match(sent.at(-2).title + sent.at(-1).title, /Se acabó el tiempo|no cumplió/);
+  assert.ok(sent.some((m) => /Se acabó el tiempo|no cumplió/.test(m.title)));
 });
 
 test('si lo cumple a tiempo no pierde puntos', async () => {
