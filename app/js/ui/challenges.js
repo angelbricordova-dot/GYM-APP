@@ -36,12 +36,16 @@ export function ChallengeCard({ c, compact }) {
     else if (c.status === 'rejected') action = html`<button class="btn primary block" onClick=${start}>Intentarlo de nuevo</button>`;
   } else if (c.status === 'submitted') action = html`<button class="btn primary block" onClick=${() => setSheet('review')}><${Icon} name="check" size=${18} sw=${2.6} /> Revisar evidencia</button>`;
   else if (['open', 'started', 'rejected'].includes(c.status)) {
-    action = html`<div class="idea-actions"><button class="btn primary" onClick=${() => setSheet('remind')}><${Icon} name="bell" size=${16} /> ${c.reminder && !c.reminder.settled ? 'Cambiar límite' : 'Recordarle'}</button><button class="btn tinted" onClick=${cancel}>Cancelar reto</button></div>`;
+    const expired = c.reminder?.settled === 'late';
+    action = html`<div class="idea-actions">${expired
+      ? html`<button class="btn primary" onClick=${() => setSheet('forgive')}>💗 Perdonar</button>`
+      : html`<button class="btn primary" onClick=${() => setSheet('remind')}><${Icon} name="bell" size=${16} /> ${c.reminder && !c.reminder.settled ? 'Cambiar límite' : 'Recordarle'}</button>`}<button class="btn tinted" onClick=${cancel}>Cancelar reto</button></div>`;
   }
   const pending = ['open', 'started', 'rejected'].includes(c.status);
   const rem = c.reminder;
   const limit = rem && pending && !rem.settled
-    ? html`<p class="limit-note">⏰ ${mine ? `Tienes hasta el ${fmtDay(rem.date)}: si no lo cumples pierdes ${L.LATE_PENALTY} puntos` : `${nameOf(c.to)} tiene hasta el ${fmtDay(rem.date)}: si no lo cumple pierde ${L.LATE_PENALTY} puntos`}</p>`
+    ? html`<p class="limit-note">${rem.forgiven ? '💗 Otra oportunidad · ' : ''}⏰ ${mine ? `Tienes hasta el ${fmtDay(rem.date)}: si no lo cumples pierdes ${L.LATE_PENALTY} puntos` : `${nameOf(c.to)} tiene hasta el ${fmtDay(rem.date)}: si no lo cumple pierde ${L.LATE_PENALTY} puntos`}</p>`
+    : rem?.settled === 'forgiven' && pending ? html`<p class="limit-note">💗 ${mine ? `Te perdonaron este reto${rem.refunded ? ` · te devolvieron ${L.LATE_PENALTY} puntos` : ''}` : `Perdonaste este reto${rem.refunded ? ` · le devolviste ${L.LATE_PENALTY} puntos` : ''}`}</p>`
     : rem?.settled === 'late' ? html`<p class="limit-note bad">⏰ ${mine ? `No lo cumpliste a tiempo · −${L.LATE_PENALTY} puntos` : `${nameOf(c.to)} no lo cumplió a tiempo · −${L.LATE_PENALTY} puntos`}</p>` : null;
 
   const sub = mine
@@ -60,6 +64,7 @@ export function ChallengeCard({ c, compact }) {
     ${limit}
     ${action}
     ${c.evidence && !c.evidence.removed && !(c.status === 'submitted' && !mine) && ['submitted', 'approved'].includes(c.status) && html`<button class="btn tinted sm ch-view" onClick=${() => setSheet('view')}><${Icon} name="eye" size=${16} /> Ver evidencia</button>`}
+    ${sheet === 'forgive' && html`<${ForgiveSheet} c=${c} onClose=${() => setSheet(null)} />`}
     ${sheet === 'remind' && html`<${RemindSheet} c=${c} onClose=${() => setSheet(null)} />`}
     ${sheet === 'view' && html`<${ReviewSheet} c=${c} viewOnly onClose=${() => setSheet(null)} />`}
     ${sheet === 'record' && html`<${EvidenceSheet} c=${c} onClose=${() => setSheet(null)} />`}
@@ -87,6 +92,31 @@ function RemindSheet({ c, onClose }) {
     <${Field} label="O elige otro día"><input type="date" min=${today} value=${date} onInput=${(e) => e.target.value && setDate(e.target.value)} /><//>
     <p class="limit-note">Si no lo cumple antes de que termine el ${fmtDay(date)}, pierde <b>${L.LATE_PENALTY} puntos de amor</b>.</p>
     <button class="btn primary block lg" disabled=${busy || date < today} onClick=${send}>${busy ? 'Enviando…' : 'Enviar recordatorio'}</button>
+  <//>`;
+}
+
+// ============ perdonar un reto vencido ============
+function ForgiveSheet({ c, onClose }) {
+  const today = L.ymd();
+  const name = S.state.partner?.name || 'tu pareja';
+  const [refund, setRefund] = useState(true);
+  const [date, setDate] = useState(L.addDays(today, 1)); // null = solo perdonar, sin nuevo límite
+  const [busy, setBusy] = useState(false);
+  const quick = [[null, 'No, solo perdonar'], [0, 'Hoy'], [1, 'Mañana'], [2, 'En 2 días'], [3, 'En 3 días'], [7, 'En una semana']];
+  const send = async () => {
+    setBusy(true);
+    const r = await S.forgiveChallenge(c.id, { refund, date });
+    setBusy(false);
+    if (r.ok) { toast(`Perdonaste a ${name}`, { icon: '💗', body: [refund ? `Le devolviste ${L.LATE_PENALTY} puntos` : '', date ? `Tiene hasta el ${fmtDay(date)}` : ''].filter(Boolean).join(' · ') || undefined }); onClose(); } else toast(r.data.error, { icon: '⚠️' });
+  };
+  return html`<${Sheet} title=${`Perdonar a ${name}`} onClose=${onClose}>
+    <p class="muted"><b>${c.title}</b>: no lo cumplió a tiempo y perdió ${L.LATE_PENALTY} puntos de amor. Puedes perdonarla y darle otra oportunidad.</p>
+    <label class="row switch-row"><div class="grow"><b>Devolverle los ${L.LATE_PENALTY} puntos</b><small class="muted">Recupera lo que le quitaron</small></div><input type="checkbox" checked=${refund} onChange=${(e) => setRefund(e.target.checked)} /></label>
+    <h3 class="sec-h">¿Le das otra oportunidad para hacerlo?</h3>
+    <div class="chips wrap">${quick.map(([n, label]) => { const v = n === null ? null : L.addDays(today, n); return html`<button type="button" class=${cx('chip pick', date === v && 'on')} onClick=${() => setDate(v)}>${label}</button>`; })}</div>
+    ${date !== null && html`<${Field} label="O elige otro día"><input type="date" min=${today} value=${date} onInput=${(e) => e.target.value && setDate(e.target.value)} /><//>
+      <p class="limit-note">Tendrá hasta que termine el ${fmtDay(date)}. Si no lo cumple, vuelve a perder ${L.LATE_PENALTY} puntos.</p>`}
+    <button class="btn primary block lg" disabled=${busy} onClick=${send}>${busy ? 'Enviando…' : date ? `Perdonar y darle hasta el ${fmtDay(date)}` : 'Perdonar'}</button>
   <//>`;
 }
 

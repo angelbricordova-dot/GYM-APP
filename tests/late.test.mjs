@@ -74,3 +74,36 @@ test('si se cancela el reto no hay castigo, y al sincronizar también se aplican
   await runReminders(new Date(Date.now() + 5 * 864e5));
   assert.equal(await bal(B), before);
 });
+
+test('perdonar un reto vencido: devuelve los puntos y puede dar otra oportunidad', async () => {
+  const c = (await call('POST', '/challenges', { token: A.token, body: { title: 'Dominadas', points: 15 } })).data.challenge;
+  const forgive = (who, body) => call('POST', `/challenges/${c.id}/forgive`, { token: who.token, body });
+  assert.equal((await forgive(A, {})).status, 409); // aún no venció
+  await call('POST', `/challenges/${c.id}/remind`, { token: A.token, body: { date: day(1) } });
+  const start = await bal(B);
+  await runReminders(new Date(Date.now() + 5 * 864e5));
+  assert.equal(await bal(B), start - 5); // venció: −5
+  assert.equal((await forgive(B, {})).status, 403); // solo quien puso el reto
+  assert.equal((await forgive(A, { date: 'ayer' })).status, 400);
+  assert.equal((await forgive(A, { date: day(-4) })).status, 400);
+
+  // perdonar + nueva oportunidad: vuelven los 5 y queda un límite nuevo
+  sent.length = 0;
+  const r = await forgive(A, { refund: true, date: day(3) });
+  assert.equal(r.status, 200);
+  assert.deepEqual([r.data.challenge.reminder.settled, r.data.challenge.reminder.date, r.data.challenge.reminder.count], [null, day(3), 2]);
+  assert.equal(await bal(B), start); // recuperó los 5
+  assert.match(sent.at(-1).title, /perdonó/);
+  assert.match(sent.at(-1).body, /devolvió 5/);
+  assert.equal((await forgive(A, {})).status, 409); // ya no hay vencimiento pendiente
+
+  // si vuelve a vencer sin cumplir, pierde otra vez (es un plazo nuevo)
+  await runReminders(new Date(Date.now() + 9 * 864e5));
+  assert.equal(await bal(B), start - 5);
+  // perdonar sin devolver puntos y sin nuevo límite: el reto sigue, queda como perdonado
+  const r2 = await forgive(A, { refund: false });
+  assert.equal(r2.status, 200);
+  assert.equal(r2.data.challenge.reminder.settled, 'forgiven');
+  assert.equal(await bal(B), start - 5); // no se devolvió nada
+  assert.equal((await call('POST', `/challenges/${c.id}/cancel`, { token: A.token })).status, 200); // y se puede cancelar
+});

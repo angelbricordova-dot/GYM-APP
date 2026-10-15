@@ -75,6 +75,7 @@ function incoming(prev, cur, name, first) {
     const old = pc.get(c.id);
     if (!old && c.to === me && c.status === 'open' && fresh(c.ts)) out.push({ icon: '🎯', title: `${name} te retó`, body: `${c.title} · ${c.points} puntos de amor`, tab: 'today' });
     else if (old && c.to === me && c.reminder && c.reminder.ts !== old.reminder?.ts && !c.reminder.settled) out.push({ icon: '⏰', title: `${name} te recuerda un reto`, body: `${c.title}: tienes hasta el ${fmtShortDate(c.reminder.date)} o pierdes ${L.LATE_PENALTY} puntos`, tab: 'today' });
+    else if (old && c.to === me && old.reminder?.settled === 'late' && (c.reminder?.settled === 'forgiven' || (c.reminder?.forgiven && c.reminder.ts !== old.reminder.ts))) out.push({ icon: '💗', title: `${name} te perdonó el reto`, body: `${c.title}${c.reminder.settled === null ? ` · tienes hasta el ${fmtShortDate(c.reminder.date)}` : ''}`, tab: 'today' });
     else if (old && c.to === me && c.reminder?.settled === 'late' && !old.reminder?.settled) out.push({ icon: '⏰', title: `Se acabó el tiempo: −${L.LATE_PENALTY} puntos`, body: c.title, tab: 'today' });
     else if (old && old.status !== c.status) {
       if (c.from === me && c.status === 'submitted') out.push({ icon: '📹', title: `${name} envió su evidencia`, body: `${c.title}: revísala`, tab: 'today' });
@@ -431,6 +432,8 @@ export const startChallenge = (id) => act('POST', `/challenges/${id}/start`);
 export const reviewChallenge = (id, action, note = '') => act('POST', `/challenges/${id}/review`, { action, note });
 export const cancelChallenge = (id) => act('POST', `/challenges/${id}/cancel`);
 /** Recordarle un reto a mi pareja: le llega una notificación y fijo hasta qué día tiene (si no, pierde puntos). */
+/** Perdonar un reto vencido: devuelve los puntos (si `refund`) y, con `date`, le da otra oportunidad hasta ese día. */
+export const forgiveChallenge = (id, { refund = true, date = null } = {}) => act('POST', `/challenges/${id}/forgive`, { refund, date });
 export const remindChallenge = (id, date) => act('POST', `/challenges/${id}/remind`, { date });
 const fmtShortDate = (d) => String(d).split('-').reverse().slice(0, 2).join('/');
 

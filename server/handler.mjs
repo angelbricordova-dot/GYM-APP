@@ -625,7 +625,7 @@ async function settleLate(now = Date.now(), only = null) {
       const lazy = await db.get(`user/${c.to}`);
       if (lazy) {
         lazy.doc.ledger = lazy.doc.ledger || [];
-        lazy.doc.ledger.push({ id: randomUUID(), ts: now, key: `bank:late:${c.id}`, delta: -L.LATE_PENALTY, reason: `No cumplió a tiempo: ${String(c.title).slice(0, 50)}`, date: new Date(now).toISOString().slice(0, 10) });
+        lazy.doc.ledger.push({ id: randomUUID(), ts: now, key: `bank:late:${c.id}:${r.count || 1}`, delta: -L.LATE_PENALTY, reason: `No cumplió a tiempo: ${String(c.title).slice(0, 50)}`, date: new Date(now).toISOString().slice(0, 10) });
         lazy.doc.updatedAt = Math.max(now, (lazy.doc.updatedAt || 0) + 1);
         await db.set(`user/${lazy.id}`, lazy);
         await push.notify(c.to, { type: 'challenges', title: `Se acabó el tiempo del reto ⏰ −${L.LATE_PENALTY} puntos`, body: c.title, url: '/?tab=today' });
@@ -699,6 +699,36 @@ async function challengeAction(user, id, action, req, url, body) {
     if (expiresAt <= Date.now()) return fail(400, 'Elige hoy o un día que no haya pasado.');
     if (expiresAt > Date.now() + 31 * 864e5) return fail(400, 'Ese límite queda muy lejos (máximo 30 días).');
     c.reminder = { date, expiresAt, ts: Date.now(), count: (c.reminder?.count || 0) + 1, settled: null };
+  } else if (action === 'forgive') {
+    // Perdonar un reto vencido: se le devuelven los puntos que perdió y, si quiere, se le da otra oportunidad con un límite nuevo
+    if (!isFrom) return fail(403, 'Solo quien puso el reto puede perdonarlo.');
+    const r = c.reminder;
+    if (!r || r.settled !== 'late') return fail(409, 'Este reto no tiene un límite vencido que perdonar.');
+    if (c.status === 'cancelled') return fail(409, 'Este reto ya está cancelado.');
+    let next = null;
+    if (body.date) {
+      const date = String(body.date);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) return fail(400, 'Elige hasta cuándo tiene.');
+      const target = await db.get(`user/${c.to}`);
+      const expiresAt = endOfDay(date, target?.doc?.tz);
+      if (expiresAt <= Date.now()) return fail(400, 'Elige hoy o un día que no haya pasado.');
+      if (expiresAt > Date.now() + 31 * 864e5) return fail(400, 'Ese límite queda muy lejos (máximo 30 días).');
+      next = { date, expiresAt };
+    }
+    const refund = body.refund !== false && !r.refunded;
+    if (refund) {
+      const lazy = await db.get(`user/${c.to}`);
+      if (lazy) {
+        const now = Date.now();
+        lazy.doc.ledger = lazy.doc.ledger || [];
+        lazy.doc.ledger.push({ id: randomUUID(), ts: now, key: `bank:forgive:${c.id}:${r.count || 1}`, delta: L.LATE_PENALTY, reason: `Te perdonaron: ${String(c.title).slice(0, 50)}`, date: new Date(now).toISOString().slice(0, 10) });
+        lazy.doc.updatedAt = Math.max(now, (lazy.doc.updatedAt || 0) + 1);
+        await db.set(`user/${lazy.id}`, lazy);
+      }
+    }
+    c.reminder = next
+      ? { date: next.date, expiresAt: next.expiresAt, ts: Date.now(), count: (r.count || 1) + 1, settled: null, forgiven: true }
+      : { ...r, settled: 'forgiven', refunded: refund || !!r.refunded };
   } else if (action === 'cancel') {
     if (!isFrom) return fail(403, 'Solo quien puso el reto puede cancelarlo.');
     if (c.status === 'approved') return fail(409, 'Un reto aprobado ya no se puede cancelar.');
@@ -707,7 +737,10 @@ async function challengeAction(user, id, action, req, url, body) {
   c.updatedAt = Date.now();
   await db.set(key, c);
   const other = isTo ? c.from : c.to;
-  if (action === 'remind') await push.notify(other, { type: 'challenges', title: `⏰ ${first(user.name)} te recuerda un reto`, body: `${c.title}: tienes hasta el ${c.reminder.date.split('-').reverse().slice(0, 2).join('/')}. Si no lo cumples pierdes ${L.LATE_PENALTY} puntos de amor`, url: '/?tab=today', tag: `late-${c.id}` });
+  if (action === 'forgive') {
+    const back = body.refund !== false;
+    await push.notify(other, { type: 'challenges', title: `💗 ${first(user.name)} te perdonó el reto`, body: `${c.title}${back ? ` · te devolvió ${L.LATE_PENALTY} puntos de amor` : ''}${c.reminder.settled === null ? ` · tienes hasta el ${c.reminder.date.split('-').reverse().slice(0, 2).join('/')}` : ''}`, url: '/?tab=today', tag: `forgive-${c.id}` });
+  } else if (action === 'remind') await push.notify(other, { type: 'challenges', title: `⏰ ${first(user.name)} te recuerda un reto`, body: `${c.title}: tienes hasta el ${c.reminder.date.split('-').reverse().slice(0, 2).join('/')}. Si no lo cumples pierdes ${L.LATE_PENALTY} puntos de amor`, url: '/?tab=today', tag: `late-${c.id}` });
   else if (action === 'evidence') await push.notify(other, { type: 'challenges', title: `${first(user.name)} envió su evidencia 📹`, body: `${c.title}: revísala y apruébala`, url: '/?tab=today' });
   else if (action === 'review') await push.notify(other, { type: 'challenges', title: c.status === 'approved' ? `¡Reto aprobado! +${c.points} puntos de amor 💗` : 'Te pidieron repetir el reto', body: c.status === 'approved' ? c.title : c.note || c.title, url: '/?tab=today' });
   return json(200, { challenge: c });
@@ -1038,7 +1071,7 @@ export default async function handler(req) {
     if (m === 'POST' && path === '/auth/google/link') return await linkGoogle(user, await body());
     if (m === 'POST' && path === '/auth/pin') return await setPin(user, await body());
     if (m === 'POST' && path === '/challenges') return await postChallenge(user, await body());
-    if (m === 'POST' && (r = path.match(/^\/challenges\/([^/]+)\/(start|evidence|review|cancel|remind)$/))) return await challengeAction(user, r[1], r[2], req, url, ['review', 'remind'].includes(r[2]) ? await body() : {});
+    if (m === 'POST' && (r = path.match(/^\/challenges\/([^/]+)\/(start|evidence|review|cancel|remind|forgive)$/))) return await challengeAction(user, r[1], r[2], req, url, ['review', 'remind', 'forgive'].includes(r[2]) ? await body() : {});
     if (m === 'GET' && (r = path.match(/^\/challenges\/([^/]+)\/evidence$/))) return await getEvidence(user, r[1]);
     if (m === 'POST' && (r = path.match(/^\/messages\/([^/]+)\/like$/))) return await likeMessage(user, r[1]);
     if (m === 'POST' && (r = path.match(/^\/messages\/([^/]+)\/star$/))) return await starMessage(user, r[1]);
