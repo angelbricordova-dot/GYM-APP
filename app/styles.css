@@ -977,3 +977,8 @@ button.mo-cell:disabled { opacity: 1; }
 .limit-note { margin: 8px 0 4px; padding: 8px 12px; border-radius: 12px; font-size: 14px; background: color-mix(in srgb, var(--warn, #ff9f0a) 14%, transparent); }
 .limit-note.bad { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
 .challenge .idea-actions { margin-top: 10px; }
+
+.listening { cursor: default; }
+.listening .btn { flex: none; }
+.jam-group { margin-top: 8px; }
+.jam-switch small { display: block; }

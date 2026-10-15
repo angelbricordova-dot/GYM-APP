@@ -1049,14 +1049,19 @@ export default async function handler(req) {
     if (m === 'POST' && (r = path.match(/^\/vouchers\/([^/]+)\/(done|claim|confirm|reject|deny|later)$/))) return await voucherAction(user, r[1], r[2], m === 'POST' ? await body() : {});
     if (m === 'POST' && path === '/messages') return await postMessage(user, await body());
     if (m === 'GET' && path === '/music/me') return json(200, music.mine(await db.get(`user/${user.id}`)));
-    if (m === 'POST' && path === '/music/play') return reply(await music.play(user, await body()));
+    if (m === 'POST' && path === '/music/play') {
+      const b = await body();
+      const r = await music.play(user, b);
+      if (b.jam && r.item) await tell(user, { type: 'notes', title: `🎧 ${first(user.name)} se unió a tu música`, body: r.item.title, url: '/?tab=today', tag: 'jam' }); // Jam: se unió a lo que ella escucha
+      return reply(r);
+    }
     if (m === 'POST' && path === '/music/stop') return reply(await music.stop(user));
     if (m === 'GET' && path === '/music/partner') {
       const pid = await partnerOf(user);
       const rec = pid && (await db.get(`user/${pid}`));
       if (!rec) return json(200, { partner: null });
       const { now, last } = music.listening(rec);
-      return json(200, { partner: { name: rec.name, now, last } }); // el error de la cuenta de ella no se comparte
+      return json(200, { partner: { name: rec.name, now, last }, at: Date.now() }); // el error de la cuenta de ella no se comparte
     }
     if (path.startsWith('/push/')) return await pushRoutes(user, path, m === 'POST' ? await body() : {}, m);
     if (m === 'POST' && path === '/me/reset') return await resetMe(user);

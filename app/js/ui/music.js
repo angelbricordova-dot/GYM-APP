@@ -9,7 +9,7 @@ const POS_KEY = 'gymduo.dock';
 const loadPos = () => { try { const p = JSON.parse(localStorage.getItem(POS_KEY)); return p && Number.isFinite(p.x) && Number.isFinite(p.y) ? p : null; } catch { return null; } };
 const OPTS_KEY = 'gymduo.dock.opts';
 const loadOpts = () => { try { const o = JSON.parse(localStorage.getItem(OPTS_KEY)); return { shape: o?.shape === 'square' ? 'square' : 'circle', covered: !!o?.covered }; } catch { return { shape: 'circle', covered: false }; } };
-const player = { item: null, big: true, pos: loadPos(), ...loadOpts() }; // `pos`: dónde dejaste el reproductor mini (null = esquina de abajo a la derecha)
+const player = { item: null, big: true, pos: loadPos(), follow: (() => { try { return localStorage.getItem('gymduo.jam') === '1'; } catch { return false; } })(), ...loadOpts() }; // `pos`: dónde dejaste el reproductor mini (null = esquina de abajo a la derecha)
 const MINI_SIZE = { circle: { w: 104, h: 104 }, square: { w: 128, h: 72 } };
 const mini = () => MINI_SIZE[player.shape];
 /** Zonas del teléfono que no se pueden tocar (muesca, isla dinámica, barra de inicio). */
@@ -55,19 +55,50 @@ const emit = () => listeners.forEach((f) => f());
 addEventListener('resize', () => { if (player.item) emit(); });
 addEventListener('orientationchange', () => { if (player.item) emit(); });
 
-/** Reproduce un enlace o un elemento del historial dentro de la app y avisa a la pareja qué escuchas. */
-export async function playItem(item) {
+/** Reproduce un enlace o un elemento del historial dentro de la app y avisa a la pareja qué escuchas.
+ *  `opts.jam`: me uní a lo que escucha mi pareja (nombre) y `opts.start`: segundo aproximado por donde va. */
+export async function playItem(item, opts = {}) {
   const link = parseMusicLink(item?.url);
   if (!link) { toast('Ese enlace no se puede reproducir aquí', { icon: '⚠️' }); return null; }
-  player.item = { ...item, link };
+  const extra = { start: link.kind === 'video' && opts.start > 2 ? Math.floor(opts.start) : 0, jam: opts.jam || null };
+  player.item = { ...item, link, ...extra };
   player.big = true;
   emit();
-  const r = await S.request('POST', '/music/play', { url: link.url });
-  if (r.ok) player.item = { ...r.data.item, link };
+  const r = await S.request('POST', '/music/play', { url: link.url, jam: !!opts.jam });
+  if (r.ok) player.item = { ...r.data.item, link, ...extra };
   else if (r.status !== 0) toast(r.data.error, { icon: '⚠️' });
   emit();
   return player.item;
 }
+
+/** Jam: me uno a lo que escucha mi pareja, empezando más o menos por donde va (no sigue pausas ni saltos). */
+export function joinPartner(info) {
+  const t = info?.now;
+  if (!t) return null;
+  const secs = info.at ? (info.at - t.ts) / 1000 + (Date.now() - (info.fetched || Date.now())) / 1000 : 0;
+  return playItem(t, { jam: info.name, start: secs > 0 && secs < 6 * 3600 ? secs : 0 });
+}
+
+// “Seguir su música”: cada 15 s revisa y, si ella puso otra canción, me paso a esa.
+let followTimer = null;
+const followTick = async () => {
+  if (!player.follow || !S.state.partner) return;
+  const r = await S.request('GET', '/music/partner');
+  const p = r.ok && r.data.partner;
+  if (p?.now && p.now.url !== player.item?.url) joinPartner({ ...p, at: r.data.at, fetched: Date.now() });
+};
+const syncFollowTimer = () => {
+  if (player.follow && !followTimer) { followTimer = setInterval(followTick, 15000); followTick(); }
+  if (!player.follow && followTimer) { clearInterval(followTimer); followTimer = null; }
+};
+export const setFollow = (v) => {
+  player.follow = v;
+  try { localStorage.setItem('gymduo.jam', v ? '1' : '0'); } catch { /* sin storage */ }
+  syncFollowTimer();
+  emit();
+};
+export const useFollow = () => { usePlayer(); return player.follow; };
+syncFollowTimer();
 export const setBig = (v) => { player.big = v; emit(); };
 /** Forma del reproductor mini (círculo o cuadro) y si está tapado (suena sin mostrar el video). Se recuerda. */
 export const setOpt = (patch) => {
@@ -95,9 +126,9 @@ export function MusicDock({ expanded }) {
   const covered = mode === 'mini' && player.covered;
   const grip = { onPointerDown: dragStart, onPointerMove: dragMove, onPointerUp: dragEnd, onPointerCancel: dragEnd };
   return html`<div class=${cx('music-dock', mode, mode === 'mini' && (round ? 'round' : 'sq'))} style=${`height:${h}px;${size ? `width:${size.w}px;` : ''}${at}`}>
-    <iframe title="Reproductor" src=${`${l.embed}&autoplay=1`} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" referrerpolicy="strict-origin-when-cross-origin" loading="eager"></iframe>
+    <iframe title="Reproductor" src=${`${l.embed}&autoplay=1${item.start ? `&start=${item.start}` : ''}`} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" referrerpolicy="strict-origin-when-cross-origin" loading="eager"></iframe>
     ${mode === 'big' && html`<div class="dock-bar">
-      <div class="dock-title"><span class="grow"><b>${item.title || 'Música'}</b><small class="muted">Si no empieza sola, toca ▶</small></span><button class="icon-btn flat" onClick=${stopPlayer} aria-label="Cerrar el reproductor"><${Icon} name="x" size=${16} sw=${2.4} /></button></div>
+      <div class="dock-title"><span class="grow"><b>${item.jam ? `🎧 Jam con ${item.jam}` : item.title || 'Música'}</b><small class="muted">Si no empieza sola, toca ▶</small></span><button class="icon-btn flat" onClick=${stopPlayer} aria-label="Cerrar el reproductor"><${Icon} name="x" size=${16} sw=${2.4} /></button></div>
       <div class="dock-opts">
         <button class="chip" onClick=${() => setBig(false)}><${Icon} name="expand" size=${14} /> Minimizar</button>
         <button class="chip" onClick=${() => setOpt({ shape: round ? 'square' : 'circle' })}>${round ? '⬜ Cuadro' : '⚪ Círculo'}</button>
@@ -118,7 +149,7 @@ export function usePartnerMusic(on = true) {
   useEffect(() => {
     if (!on) return;
     let alive = true;
-    const load = async () => { const r = await S.request('GET', '/music/partner'); if (alive && r.ok) setInfo(r.data.partner); };
+    const load = async () => { const r = await S.request('GET', '/music/partner'); if (alive && r.ok) setInfo(r.data.partner && { ...r.data.partner, at: r.data.at, fetched: Date.now() }); };
     load();
     const id = setInterval(load, 20000);
     return () => { alive = false; clearInterval(id); };
@@ -126,16 +157,26 @@ export function usePartnerMusic(on = true) {
   return info;
 }
 
-/** “🎧 Angélica está escuchando…” (o lo último que escuchó). Un toque lo reproduce aquí. */
+/** “🎧 Angélica está escuchando…” (o lo último que escuchó). “Unirme” = Jam: suena lo mismo, más o menos por donde va. */
 export function ListeningLine({ info, compact }) {
+  const item = usePlayer();
   if (!info || (!info.now && !info.last)) return null;
   const t = info.now || info.last;
   const live = !!info.now;
-  return html`<button class=${cx('listening', compact && 'compact', live && 'live')} onClick=${() => playItem(t)}>
+  const joined = live && item?.url === t.url && !!item.jam;
+  return html`<div class=${cx('listening', compact && 'compact', live && 'live')}>
     ${t.art ? html`<img src=${t.art} alt="" />` : html`<span class="l-art"><${Icon} name="music" size=${18} /></span>`}
     <span class="grow"><small class="muted">${live ? html`<i class="live-dot"></i> ${info.name} está escuchando` : `${info.name} escuchó ${relTime(t.ts)}`}</small><b>${t.title}</b>${t.artist && html`<small class="muted">${t.artist}</small>`}</span>
-    <${Icon} name="play" size=${16} fill />
-  </button>`;
+    ${live
+      ? html`<button class=${cx('btn sm', joined ? 'tinted' : 'primary')} onClick=${() => !joined && joinPartner(info)} disabled=${joined}>${joined ? '🎧 En Jam' : '🎧 Unirme'}</button>`
+      : html`<button class="btn sm tinted" onClick=${() => playItem(t)} aria-label="Escuchar"><${Icon} name="play" size=${14} fill /></button>`}
+  </div>`;
+}
+
+/** Interruptor: seguir automáticamente lo que escucha mi pareja. */
+export function FollowSwitch({ name }) {
+  const on = useFollow();
+  return html`<label class="row switch-row jam-switch"><div class="grow"><b>🎧 Jam con ${name || 'tu pareja'}</b><small class="muted">Suena lo mismo que ella escucha, y te pasas solo cuando cambia de canción</small></div><input type="checkbox" checked=${on} onChange=${(e) => setFollow(e.target.checked)} /></label>`;
 }
 
 // ---------- pantalla Música ----------
@@ -166,6 +207,7 @@ export function Music() {
     <div class="screen-body">
       ${item && html`<div class="music-now"><span class="grow"><small class="muted">Reproduciendo</small><b>${item.title || 'Música'}</b></span><button class="btn sm tinted" onClick=${stopPlayer}>Detener</button></div>`}
       ${S.state.partner && html`<${ListeningLine} info=${partner} />`}
+      ${S.state.partner && html`<div class="group"><${FollowSwitch} name=${S.state.partner.name} /></div>`}
 
       <form class="music-add" onSubmit=${submit}>
         <input class="search" type="url" inputmode="url" placeholder="Pega un enlace de YouTube Music" value=${url} onInput=${(e) => setUrl(e.target.value)} />
@@ -208,6 +250,7 @@ export function MusicCard() {
     <div class="row-between"><h2>🎧 Música</h2><button class="link" onClick=${openMusic}>Ver todo</button></div>
     ${item && html`<div class="music-now"><span class="grow"><small class="muted">Reproduciendo</small><b>${item.title || 'Música'}</b></span><button class="btn sm tinted" onClick=${stopPlayer}>Detener</button></div>`}
     ${S.state.partner && html`<${ListeningLine} info=${partner} compact />`}
+    ${S.state.partner && html`<div class="group jam-group"><${FollowSwitch} name=${S.state.partner.name} /></div>`}
     <form class="music-quick" onSubmit=${submit}>
       <input class="search" type="url" inputmode="url" placeholder="Pega un enlace de YouTube Music" value=${url} onInput=${(e) => setUrl(e.target.value)} />
       <button class="btn primary sm" disabled=${!url.trim()} aria-label="Reproducir"><${Icon} name="play" size=${15} fill /></button>

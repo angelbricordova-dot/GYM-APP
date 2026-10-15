@@ -193,7 +193,7 @@ export async function syncNow() {
     // 1) subir mis cambios
     if (state.dirty && state.me) {
       const res = await call('PUT', '/me', { doc: state.me });
-      if (res.ok) { state.meSyncedAt = state.me.updatedAt; state.dirty = false; }
+      if (res.ok) { if (state.me) state.meSyncedAt = state.me.updatedAt; state.dirty = false; }
       else if (res.status === 409 && res.data.doc) { state.me = res.data.doc; state.meSyncedAt = res.data.doc.updatedAt; state.dirty = false; }
     }
     // 2) subir fotos pendientes
@@ -208,7 +208,7 @@ export async function syncNow() {
         state.me.updatedAt = Date.now();
         state.dirty = true;
       }
-      if (state.dirty) { const r = await call('PUT', '/me', { doc: state.me }); if (r.ok) { state.meSyncedAt = state.me.updatedAt; state.dirty = false; } }
+      if (state.dirty) { const r = await call('PUT', '/me', { doc: state.me }); if (r.ok) { if (state.me) state.meSyncedAt = state.me.updatedAt; state.dirty = false; } }
     }
     // 3) traer lo nuevo
     const q = `/sync?meAt=${state.meSyncedAt}&partnerAt=${state.partner?.updatedAt || 0}`;

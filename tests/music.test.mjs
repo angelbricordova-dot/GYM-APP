@@ -53,6 +53,16 @@ test('reproducir un enlace dentro de la app: se guarda, cuenta como escuchando y
   assert.equal(after.last.title, 'Un video'); // queda como “lo último”
 });
 
+test('Jam: me uno a lo que ella escucha (se guarda en mi historial y ella ve que escucho lo mismo)', async () => {
+  await call('POST', '/music/play', { token: A.token, body: { url: 'https://music.youtube.com/watch?v=dQw4w9WgXcQ' } });
+  const p = (await call('GET', '/music/partner', { token: B.token })).data;
+  assert.ok(Number.isFinite(p.at) && p.partner.now.ts <= p.at); // la hora del servidor permite calcular por dónde va
+  const join = await call('POST', '/music/play', { token: B.token, body: { url: p.partner.now.url, jam: true } });
+  assert.equal(join.status, 200);
+  const back = (await call('GET', '/music/partner', { token: A.token })).data.partner;
+  assert.equal(back.now.url, p.partner.now.url); // los dos escuchan lo mismo
+});
+
 test('sin rutas de Spotify', async () => {
   assert.equal((await call('POST', '/spotify/start', { token: A.token, body: {} })).status, 404);
 });
