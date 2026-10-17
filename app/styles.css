@@ -1040,3 +1040,11 @@ button.mo-cell:disabled { opacity: 1; }
 .react-edit input { flex: 1; min-width: 0; height: 40px; border: 0; border-radius: 12px; padding: 0 12px; background: var(--s1); color: var(--text); font: inherit; }
 .react-comment { margin: 0; font-size: 15px; }
 .react-add { align-self: flex-start; }
+
+.pv-stats { gap: 14px; }
+.pv-stats > div { min-width: 58px; }
+.pv-points b { color: var(--love, #e0245e); }
+.pv-points.debt b { color: var(--bad); }
+.pv-points .heart { color: var(--love, #e0245e); }
+.pv-points.debt .heart { color: var(--bad); }
+.pv-stats { align-items: flex-end; } .pv-stats small { white-space: nowrap; }

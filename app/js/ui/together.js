@@ -2,7 +2,7 @@ import { html, useState, useEffect, useRef } from '../../vendor/preact-htm.js';
 import * as S from '../store.js';
 import * as L from '../logic.js';
 import { accentVars, haptic, playLike } from '../theme.js';
-import { Icon, Flame, Avatar, Segmented, Empty, Sheet, toast, cx, relTime, dayLabel } from './kit.js';
+import { Icon, Flame, Heart, Avatar, Segmented, Empty, Sheet, toast, cx, relTime, dayLabel } from './kit.js';
 import { ChallengesPanel, NewChallengeSheet } from './challenges.js';
 import { RoutinesPanel } from './routines.js';
 import { SuppPanel } from './supplements.js';
@@ -167,6 +167,7 @@ function PartnerProfile({ partner }) {
   const pair = L.pairWeekStreak(S.state.me, d);
   const todayCk = d.checkins[L.ymd()];
   const photos = Object.values(d.checkins).filter((c) => c.photo).length;
+  const pts = L.balance(d); // sus puntos de amor (el saldo que ella misma lleva en su cuenta)
   const cheer = async () => { const r = await S.sendMessage(L.PHRASES[Math.floor(Math.random() * L.PHRASES.length)], 'cheer'); toast(r.ok ? `Nota enviada a ${partner.name}` : r.data.error, { icon: r.ok ? '💌' : '⚠️' }); };
   return html`<div class="stack-lg">
     <section class="pv-hero rise">
@@ -180,6 +181,7 @@ function PartnerProfile({ partner }) {
           <div><${Flame} size=${22} lit=${info.alive} /><b>${info.current}</b><small>racha</small></div>
           <div><b>${info.total}</b><small>días de gym</small></div>
           <div><b>${photos}</b><small>fotos</small></div>
+          <div class=${cx('pv-points', pts < 0 && 'debt')}><${Heart} size=${20} /><b>${pts}</b><small>${pts < 0 ? 'deuda' : 'puntos'}</small></div>
         </div>
         <p class=${cx('streak-sub', info.atRisk && 'warn')}>${todayCk ? '✅ Ya entrenó hoy' : info.atRisk ? '⚠️ Hoy es su último día de margen' : info.paused ? 'En pausa ⏸' : 'Aún no entrena hoy'}</p>
         <div class="pv-actions">
