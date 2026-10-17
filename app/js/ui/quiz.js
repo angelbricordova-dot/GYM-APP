@@ -1,7 +1,7 @@
 import { html, useState, useEffect } from '../../vendor/preact-htm.js';
 import * as S from '../store.js';
 import * as L from '../logic.js';
-import { CATEGORIES } from '../questions.js';
+import { CATEGORIES, REACTIONS } from '../questions.js';
 import { Icon, Sheet, toast, cx, fmtDay } from './kit.js';
 import { haptic } from '../theme.js';
 
@@ -77,6 +77,33 @@ function Nudge({ name }) {
   return html`<div class="nudge"><button class="btn tinted block" disabled=${busy} onClick=${send}><${Icon} name="bell" size=${16} /> Recordarle a ${name} que responda</button><small class="muted">Le llega una notificación al teléfono</small></div>`;
 }
 
+/** Lo que dejó mi pareja sobre mi respuesta (o lo que yo dejé sobre la suya, en el historial). */
+const ReactionPill = ({ r, who }) => html`<div class="react-pill"><span>${r.emoji || '💬'}</span><small>${who}${r.comment ? html`: <i>${r.comment}</i>` : ' reaccionó'}</small></div>`;
+
+/** Reaccionar a la respuesta de mi pareja con un emoji y, si quiero, un comentario corto. */
+function ReactBox({ d }) {
+  const mine = d.reaction.mine;
+  const [text, setText] = useState(mine?.comment || '');
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const save = async (emoji, comment) => {
+    setBusy(true);
+    const r = await S.request('POST', '/quiz/react', { date: L.ymd(), emoji, comment });
+    setBusy(false);
+    if (r.ok) { quiz.data = r.data; emit(); setEditing(false); } else toast(r.data.error || 'No se pudo enviar', { icon: '⚠️' });
+  };
+  const tap = (e) => { haptic(); save(mine?.emoji === e ? null : e, mine?.comment || ''); };
+  return html`<div class="react-box">
+    <small class="muted">Reacciona a la respuesta de ${d.partner.name}</small>
+    <div class="react-row">${REACTIONS.map((e) => html`<button type="button" disabled=${busy} class=${cx('react-btn', mine?.emoji === e && 'on')} onClick=${() => tap(e)} aria-label=${`Reaccionar ${e}`}>${e}</button>`)}</div>
+    ${editing
+      ? html`<div class="react-edit"><input maxlength="140" placeholder="Un comentario corto…" value=${text} onInput=${(e) => setText(e.target.value)} autofocus /><button class="btn primary sm" disabled=${busy} onClick=${() => save(mine?.emoji || null, text)}>Enviar</button></div>`
+      : mine?.comment
+        ? html`<p class="react-comment">💬 ${mine.comment} <button class="link" onClick=${() => setEditing(true)}>Editar</button></p>`
+        : html`<button class="link react-add" onClick=${() => setEditing(true)}>💬 Dejar un comentario</button>`}
+  </div>`;
+}
+
 function Answers({ d }) {
   const mine = d.me, theirs = d.partner;
   const same = d.q.type === 'choice' && mine.answered && theirs.answered && !mine.skipped && !theirs.skipped && mine.value === theirs.value;
@@ -84,9 +111,12 @@ function Answers({ d }) {
     <small class="muted">${who}</small>
     ${!a.answered ? html`<b class="muted">🙈 Todavía no responde…</b>` : a.skipped ? html`<b class="muted">Prefirió no responder</b>` : html`<b>${a.text}</b>`}
   </div>`;
+  const canReact = mine.answered && theirs.answered && !theirs.skipped;
   return html`<div class="quiz-answers">
     ${bubble('Tú', mine, true)}
+    ${d.reaction?.theirs && html`<${ReactionPill} r=${d.reaction.theirs} who=${theirs.name} />`}
     ${bubble(theirs.name, theirs, false)}
+    ${canReact && html`<${ReactBox} d=${d} />`}
     ${same && html`<p class="quiz-match">¡Coincidieron! 💞</p>`}
     ${!theirs.answered && html`<p class="muted small center">Cuando ${theirs.name} responda, su respuesta aparece aquí.</p>`}
     ${!theirs.answered && mine.answered && html`<${Nudge} name=${theirs.name} />`}
@@ -144,7 +174,8 @@ export function QuizPanel() {
     ${past.length > 0 && html`<section class="card rise" style="--i:2"><h2>Respuestas anteriores</h2>
       ${past.slice(0, 20).map((h) => html`<div class="quiz-hist"><div class="row-between"><${Chip} cat=${h.q.cat} /><small class="muted">${fmtDay(h.date)}</small></div><b>${h.q.text}</b>
         <div class="qh-ans"><small class="muted">Tú</small><span>${h.me.skipped ? 'No respondiste' : h.me.text}</span></div>
-        <div class="qh-ans"><small class="muted">${h.partner.name}</small><span>${!h.partner.answered ? '🙈 No respondió' : h.partner.skipped ? 'Prefirió no responder' : h.partner.text}</span></div></div>`)}
+        <div class="qh-ans"><small class="muted">${h.partner.name}</small><span>${!h.partner.answered ? '🙈 No respondió' : h.partner.skipped ? 'Prefirió no responder' : h.partner.text}</span></div>
+        ${h.reaction?.mine && html`<${ReactionPill} r=${h.reaction.mine} who="Tú" />`}${h.reaction?.theirs && html`<${ReactionPill} r=${h.reaction.theirs} who=${h.partner.name} />`}</div>`)}
     </section>`}
   </div>`;
 }

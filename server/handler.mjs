@@ -1079,6 +1079,7 @@ function quizView(rec, user, partnerRec) {
     q: { id: q.id, cat: q.cat, type: q.type, text: q.text, options: q.options || null, low: q.low || null, high: q.high || null },
     me: answerView(q, mine),
     partner: { name: partnerRec.name, ...pv },
+    reaction: { mine: rec.react?.[user.id] || null, theirs: rec.react?.[partnerRec.id] || null }, // mi reacción a su respuesta / su reacción a la mía
     spicy: user.quizSpicy !== false,
     bothSpicy: user.quizSpicy !== false && partnerRec.quizSpicy !== false,
   };
@@ -1123,6 +1124,29 @@ async function quizAnswer(user, body) {
   if (!a.skipped) {
     await push.notify(ctx.partnerRec.id, { type: 'quiz', title: both ? `💞 ${first(user.name)} y tú ya respondieron` : `💬 ${first(user.name)} ya respondió la pregunta del día`, body: both ? 'Entra para ver sus respuestas' : 'Responde para ver qué contestó', url: '/?tab=today', tag: 'quiz' });
   }
+  return json(200, quizView(rec, user, ctx.partnerRec));
+}
+
+/** Reaccionar (emoji) y/o dejar un comentario corto sobre la respuesta de mi pareja. Sin emoji ni comentario = quitar. */
+async function quizReact(user, body) {
+  const date = String(body.date || '');
+  if (!dateOk(date)) return fail(400, 'Fecha inválida.');
+  const ctx = await quizContext(user);
+  if (!ctx) return fail(409, 'Vincula a tu pareja primero.');
+  const key = `qa/${ctx.sp.id}/${date}`;
+  const rec = await db.get(key);
+  if (!rec) return fail(404, 'Esa pregunta aún no existe.');
+  const theirs = rec.answers[ctx.partnerRec.id];
+  if (!rec.answers[user.id] || !theirs || theirs.skipped) return fail(409, 'Puedes reaccionar cuando los dos hayan respondido.');
+  const emoji = Q.REACTIONS.includes(body.emoji) ? body.emoji : null;
+  const comment = clean(body.comment, 140);
+  rec.react = rec.react || {};
+  const prev = rec.react[user.id];
+  if (!emoji && !comment) delete rec.react[user.id];
+  else rec.react[user.id] = { emoji, comment, ts: Date.now() };
+  await db.set(key, rec);
+  const fresh = !prev || (!prev.emoji && !prev.comment) || Date.now() - prev.ts > 60_000; // no avisar por cada retoque
+  if ((emoji || comment) && fresh) await push.notify(ctx.partnerRec.id, { type: 'quiz', title: `${emoji || '💬'} ${first(user.name)} reaccionó a tu respuesta`, body: 'Entra para verlo', url: '/?tab=today', tag: 'quiz-react' });
   return json(200, quizView(rec, user, ctx.partnerRec));
 }
 
@@ -1228,6 +1252,7 @@ export default async function handler(req) {
     if (m === 'POST' && path === '/supps/remind') return await suppNudge(user);
     if (m === 'GET' && path === '/quiz/today') return await quizToday(user, url);
     if (m === 'POST' && path === '/quiz/answer') return await quizAnswer(user, await body());
+    if (m === 'POST' && path === '/quiz/react') return await quizReact(user, await body());
     if (m === 'POST' && path === '/quiz/remind') return await quizNudge(user, await body());
     if (m === 'GET' && path === '/quiz/history') return await quizHistory(user);
     if (m === 'POST' && path === '/quiz/settings') return await quizSettings(user, await body());

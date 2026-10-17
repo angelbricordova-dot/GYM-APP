@@ -151,3 +151,34 @@ test('recordarle a mi pareja que responda: solo si yo ya respondí y ella no, si
   await call('POST', '/quiz/answer', { token: B.token, body: { date: d, skip: true } });
   assert.equal((await nudge(A)).status, 409); // ella ya respondió
 });
+
+test('reacciones y comentario a la respuesta de mi pareja', async () => {
+  const d = day(9);
+  await call('GET', `/quiz/today?date=${d}`, { token: A.token });
+  const react = (who, body) => call('POST', '/quiz/react', { token: who.token, body: { date: d, ...body } });
+  const q = Q.questionById((await call('GET', `/quiz/today?date=${d}`, { token: A.token })).data.q.id);
+  const val = q.type === 'open' ? 'Respuesta de prueba' : q.type === 'choice' ? 0 : 3;
+  assert.equal((await react(A, { emoji: '❤️' })).status, 409); // aún no responden
+  await call('POST', '/quiz/answer', { token: A.token, body: { date: d, value: val } });
+  assert.equal((await react(A, { emoji: '❤️' })).status, 409); // ella no ha respondido
+  await call('POST', '/quiz/answer', { token: B.token, body: { date: d, value: val } });
+  sent.length = 0;
+  assert.equal((await react(A, { emoji: '🧨' })).data.reaction.mine, null); // emoji no permitido: se ignora
+  const r = await react(A, { emoji: '😍', comment: '  Me derrito  ' });
+  assert.deepEqual([r.data.reaction.mine.emoji, r.data.reaction.mine.comment, r.data.reaction.theirs], ['😍', 'Me derrito', null]);
+  const n = sent.find((m) => /reaccionó a tu respuesta/.test(m.title));
+  assert.equal(n.endpoint, 'https://push.example/B');
+  assert.doesNotMatch(n.body, /derrito/); // el comentario no sale en la notificación
+  // ella lo ve como “su reacción a mi respuesta”
+  const b = (await call('GET', `/quiz/today?date=${d}`, { token: B.token })).data;
+  assert.deepEqual([b.reaction.theirs.emoji, b.reaction.theirs.comment, b.reaction.mine], ['😍', 'Me derrito', null]);
+  // retocar enseguida no vuelve a avisar; quitar todo borra la reacción
+  sent.length = 0;
+  await react(A, { emoji: '🔥', comment: 'Me derrito' });
+  assert.equal(sent.filter((m) => /reaccionó/.test(m.title)).length, 0);
+  assert.equal((await react(A, {})).data.reaction.mine, null);
+  // y aparece en el historial
+  await react(B, { emoji: '🤝' });
+  const h = (await call('GET', '/quiz/history', { token: A.token })).data.items.find((x) => x.date === d);
+  assert.equal(h.reaction.theirs.emoji, '🤝');
+});

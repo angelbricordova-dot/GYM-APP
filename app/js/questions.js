@@ -142,6 +142,9 @@ const RAW = [
   o('picante', '¿Qué parte de nuestra intimidad quisieras que cuidáramos o mejoráramos?'),
 ];
 
+/** Reacciones que se pueden dejar a la respuesta de la pareja. */
+export const REACTIONS = ['❤️', '👍', '😂', '🔥', '😍', '🥹', '😏', '🤝'];
+
 export const QUESTIONS = RAW.map((q, i) => ({ id: `${q.cat}-${String(i + 1).padStart(3, '0')}`, ...q }));
 const BY_ID = new Map(QUESTIONS.map((q) => [q.id, q]));
 export const questionById = (id) => BY_ID.get(id) || null;
