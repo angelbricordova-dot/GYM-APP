@@ -64,6 +64,19 @@ function Answer({ d }) {
   </div>`;
 }
 
+/** Le manda una notificación a mi pareja para que responda la pregunta de hoy. */
+function Nudge({ name }) {
+  const [busy, setBusy] = useState(false);
+  const send = async () => {
+    setBusy(true);
+    const r = await S.request('POST', '/quiz/remind', { date: L.ymd() });
+    setBusy(false);
+    if (!r.ok) return toast(r.data.error || 'No se pudo enviar', { icon: r.status === 409 ? '💞' : '⚠️' });
+    toast(`Recordatorio enviado a ${name}`, { icon: '🔔', body: r.data.devices ? undefined : `${name} no tiene las notificaciones activadas: lo verá cuando abra la app` });
+  };
+  return html`<div class="nudge"><button class="btn tinted block" disabled=${busy} onClick=${send}><${Icon} name="bell" size=${16} /> Recordarle a ${name} que responda</button><small class="muted">Le llega una notificación al teléfono</small></div>`;
+}
+
 function Answers({ d }) {
   const mine = d.me, theirs = d.partner;
   const same = d.q.type === 'choice' && mine.answered && theirs.answered && !mine.skipped && !theirs.skipped && mine.value === theirs.value;
@@ -76,6 +89,7 @@ function Answers({ d }) {
     ${bubble(theirs.name, theirs, false)}
     ${same && html`<p class="quiz-match">¡Coincidieron! 💞</p>`}
     ${!theirs.answered && html`<p class="muted small center">Cuando ${theirs.name} responda, su respuesta aparece aquí.</p>`}
+    ${!theirs.answered && mine.answered && html`<${Nudge} name=${theirs.name} />`}
   </div>`;
 }
 

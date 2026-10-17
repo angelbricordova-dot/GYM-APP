@@ -134,3 +134,20 @@ test('recordar suplementos a mi pareja', async () => {
   assert.equal(r2.status, 200); // ella a él: él no ha marcado nada
   assert.equal((await call('POST', '/supps/remind', { token: A.token })).status, 409); // él a ella: ya marcó todo (o espera)
 });
+
+test('recordarle a mi pareja que responda: solo si yo ya respondí y ella no, sin el texto de la pregunta', async () => {
+  const d = day(8);
+  await call('GET', `/quiz/today?date=${d}`, { token: A.token });
+  const nudge = (who) => call('POST', '/quiz/remind', { token: who.token, body: { date: d } });
+  assert.equal((await nudge(A)).status, 409); // primero responde tú
+  await call('POST', '/quiz/answer', { token: A.token, body: { date: d, skip: true } });
+  sent.length = 0;
+  const r = await nudge(A);
+  assert.equal(r.status, 200);
+  const n = sent.find((m) => /te recuerda la pregunta/.test(m.title));
+  assert.equal(n.endpoint, 'https://push.example/B');
+  assert.doesNotMatch(n.body, /\?/); // la pregunta no sale en la notificación
+  assert.equal((await nudge(A)).status, 429); // no atosigar
+  await call('POST', '/quiz/answer', { token: B.token, body: { date: d, skip: true } });
+  assert.equal((await nudge(A)).status, 409); // ella ya respondió
+});

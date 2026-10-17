@@ -1126,6 +1126,24 @@ async function quizAnswer(user, body) {
   return json(200, quizView(rec, user, ctx.partnerRec));
 }
 
+/** “Recordarle que responda”: solo si yo ya respondí y ella no. Sin el texto de la pregunta en la notificación. */
+async function quizNudge(user, body) {
+  const date = String(body.date || '');
+  if (!dateOk(date)) return fail(400, 'Fecha inválida.');
+  const ctx = await quizContext(user);
+  if (!ctx) return fail(409, 'Vincula a tu pareja primero.');
+  const rec = await db.get(`qa/${ctx.sp.id}/${date}`);
+  if (!rec) return fail(404, 'Esa pregunta aún no existe.');
+  if (!rec.answers[user.id]) return fail(409, 'Responde tú primero.');
+  if (rec.answers[ctx.partnerRec.id]) return fail(409, `${first(ctx.partnerRec.name)} ya respondió 💞`);
+  const me = await db.get(`user/${user.id}`);
+  if (me.lastQuizNudge && Date.now() - me.lastQuizNudge < 30 * 60_000) return fail(429, 'Ya se lo recordaste hace poco. Espera un rato para no atosigarla.');
+  me.lastQuizNudge = Date.now();
+  await db.set(`user/${user.id}`, me);
+  const r = await push.notify(ctx.partnerRec.id, { type: 'quiz', title: `💞 ${first(user.name)} te recuerda la pregunta del día`, body: 'Ya respondió y quiere saber qué contestas tú. ¡Respóndela!', url: '/?tab=today', tag: 'quiz-nudge' });
+  return json(200, { ok: true, sent: r?.sent || 0, devices: (ctx.partnerRec.push || []).length });
+}
+
 async function quizHistory(user) {
   const ctx = await quizContext(user);
   if (!ctx) return json(200, { items: [] });
@@ -1210,6 +1228,7 @@ export default async function handler(req) {
     if (m === 'POST' && path === '/supps/remind') return await suppNudge(user);
     if (m === 'GET' && path === '/quiz/today') return await quizToday(user, url);
     if (m === 'POST' && path === '/quiz/answer') return await quizAnswer(user, await body());
+    if (m === 'POST' && path === '/quiz/remind') return await quizNudge(user, await body());
     if (m === 'GET' && path === '/quiz/history') return await quizHistory(user);
     if (m === 'POST' && path === '/quiz/settings') return await quizSettings(user, await body());
     if (m === 'POST' && path === '/music/stop') return reply(await music.stop(user));
